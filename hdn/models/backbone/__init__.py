@@ -6,7 +6,7 @@ from __future__ import unicode_literals
 
 from hdn.models.backbone.alexnet import alexnetlegacy, alexnet
 from hdn.models.backbone.mobile_v2 import mobilenetv2
-from hdn.models.backbone.resnet_atrous_ms import resnet18, resnet34, resnet50
+from hdn.models.backbone.resnet_atrous import resnet18, resnet34, resnet50
 
 BACKBONES = {
               'alexnetlegacy': alexnetlegacy,

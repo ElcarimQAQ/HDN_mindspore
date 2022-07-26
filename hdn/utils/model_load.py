@@ -8,6 +8,7 @@ from __future__ import unicode_literals
 import logging
 
 import torch
+import mindspore as ms
 from memory_profiler import profile
 
 
@@ -16,7 +17,7 @@ logger = logging.getLogger('global')
 
 def check_keys(model, pretrained_state_dict):
     ckpt_keys = set(pretrained_state_dict.keys())
-    model_keys = set(model.state_dict().keys())
+    model_keys = set(model.parameters_dict().keys())
     used_pretrained_keys = model_keys & ckpt_keys
     unused_pretrained_keys = ckpt_keys - model_keys
     missing_keys = model_keys - ckpt_keys
@@ -47,15 +48,10 @@ def remove_prefix(state_dict, prefix):
 # @profile  # no memory increment
 def load_pretrain(model, pretrained_path):
     logger.info('load pretrained model from {}'.format(pretrained_path))
-    device = torch.cuda.current_device()
-    print('device',device)
-    pretrained_dict = torch.load(pretrained_path,
-        map_location=lambda storage, loc: storage.cuda(device))
+    pretrained_dict = ms.load_checkpoint(pretrained_path)
     if "state_dict" in pretrained_dict.keys():
         pretrained_dict = remove_prefix(pretrained_dict['state_dict'],
                                         'module.')
-
-
     else:
         pretrained_dict = remove_prefix(pretrained_dict, 'module.')
 
@@ -75,7 +71,7 @@ def load_pretrain(model, pretrained_path):
     pretrained_dict = {k: v for k, v in pretrained_dict.items() if  'rf_lp' not in k}
 
     pretrained_dict.update(pretrained_dict)
-    model.load_state_dict(pretrained_dict, strict=False)
+    ms.load_param_into_net(model, pretrained_dict)
     return model
 
 # @profile

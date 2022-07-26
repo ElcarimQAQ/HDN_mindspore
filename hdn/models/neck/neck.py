@@ -12,16 +12,16 @@ class AdjustLayer(nn.Cell):
     def __init__(self, in_channels, out_channels, cut=True, cut_left=4, cut_num=7):
         super(AdjustLayer, self).__init__()
         self.downsample = nn.SequentialCell(
-            nn.Conv2d(in_channels, out_channels, kernel_size=1, pad_mode='vaild'),
-            nn.BatchNorm2d(out_channels),
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, pad_mode='valid'),
+            nn.BatchNorm2d(out_channels, momentum=0.1),
             )
         self.cut = cut
         self.cut_left = cut_left
         self.cut_num = cut_num
 
-    def forward(self, x):
+    def construct(self, x):
         x = self.downsample(x)
-        if self.cut and x.size(3) < 20:
+        if self.cut and x.shape[3] < 20:
             l = self.cut_left
             r = l + self.cut_num
             x = x[:, :, l:r, l:r]
@@ -37,10 +37,10 @@ class AdjustAllLayer(nn.Cell):
             self.downsample = AdjustLayer(in_channels[0], out_channels[0], cut, cut_left, cut_num)
         else:
             for i in range(self.num):
-                self.add_module('downsample'+str(i+2),
+                self.insert_child_to_cell('downsample'+str(i+2),
                                 AdjustLayer(in_channels[i], out_channels[i], cut, cut_left, cut_num))
 
-    def forward(self, features):
+    def construct(self, features):
         if self.num == 1:
             return self.downsample(features)
         else:

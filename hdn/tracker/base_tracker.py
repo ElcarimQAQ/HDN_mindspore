@@ -6,11 +6,13 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import cv2
+import numpy
 import numpy as np
-import torch
+import mindspore as ms
 
 from hdn.core.config import cfg
 from hdn.models.logpolar import getPolarImg, getLinearPolarImg
+from hdn.utils.bbox import corner2center
 from hdn.utils.transform import img_shift_left_top_2_center
 from hdn.utils.point import generate_points, generate_points_lp
 class BaseTracker(object):
@@ -130,7 +132,7 @@ class SiameseTracker(BaseTracker):
         im_patch = im_patch.transpose(2, 0, 1)
         im_patch = im_patch[np.newaxis, :, :, :]
         im_patch = im_patch.astype(np.float32)
-        im_patch = torch.from_numpy(im_patch)
+        im_patch = ms.Tensor.from_numpy(im_patch)
         if cfg.CUDA:
             im_patch = im_patch.cuda()
         return im_patch
@@ -207,9 +209,10 @@ class SiameseTracker(BaseTracker):
         im_patch = im_patch.transpose(2, 0, 1)
         im_patch = im_patch[np.newaxis, :, :, :]
         im_patch = im_patch.astype(np.float32)
-        im_patch = torch.from_numpy(im_patch)
-        if cfg.CUDA:
-            im_patch = im_patch.cuda()
+        im_patch = numpy.ascontiguousarray(im_patch)
+        im_patch = ms.Tensor.from_numpy(im_patch)
+        # if cfg.CUDA:
+        #     im_patch = im_patch.cuda()
         return im_patch, (context_xmin, context_ymin, context_xmax+1, context_ymax+1)
 
 

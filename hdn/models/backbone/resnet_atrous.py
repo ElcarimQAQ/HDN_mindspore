@@ -1,9 +1,10 @@
 import math
 import mindspore
-import torch
+import numpy as np
 
-# import mindspore.nn as nn
-import torch.nn as nn
+from mindspore import nn, ops, Tensor,context
+from mindspore.common.initializer import Normal, initializer,One
+
 
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50']
@@ -12,10 +13,10 @@ __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50']
 def conv3x3(in_planes, out_planes, stride=1, dilation=1):
     "3x3 convolution with padding"
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=dilation, bias=False, dilation=dilation)
+                     pad_mode='pad', padding=dilation, dilation=dilation)
 
 
-class BasicBlock(nn.Module):
+class BasicBlock(nn.Cell):
     expansion = 1
 
     def __init__(self, inplanes, planes, stride=1,
@@ -33,16 +34,16 @@ class BasicBlock(nn.Module):
             pad = dd
 
         self.conv1 = nn.Conv2d(inplanes, planes,
-                               stride=stride, dilation=dd, bias=False,
-                               kernel_size=3, padding=pad)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
+                               stride=stride, dilation=dd,
+                               kernel_size=3, pad_mode='pad', padding=pad)
+        self.bn1 = nn.BatchNorm2d(planes, momentum=0.1)
+        self.relu = nn.ReLU()
         self.conv2 = conv3x3(planes, planes, dilation=dilation)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = nn.BatchNorm2d(planes, momentum=0.1)
         self.downsample = downsample
         self.stride = stride
 
-    def forward(self, x):
+    def construct(self, x):
         residual = x
 
         out = self.conv1(x)
@@ -61,14 +62,14 @@ class BasicBlock(nn.Module):
         return out
 
 
-class Bottleneck(nn.Module):
+class Bottleneck(nn.Cell):
     expansion = 4
 
     def __init__(self, inplanes, planes, stride=1,
                  downsample=None, dilation=1):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1)
+        self.bn1 = nn.BatchNorm2d(planes, momentum=0.1)
         padding = 2 - stride
         if downsample is not None and dilation > 1:
             dilation = dilation // 2
@@ -80,15 +81,15 @@ class Bottleneck(nn.Module):
         if dilation > 1:
             padding = dilation
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
-                               padding=padding, bias=False, dilation=dilation)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(planes * 4)
-        self.relu = nn.ReLU(inplace=True)
+                               pad_mode='pad', padding=padding, dilation=dilation)
+        self.bn2 = nn.BatchNorm2d(planes, momentum=0.1)
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1)
+        self.bn3 = nn.BatchNorm2d(planes * 4, momentum=0.1)
+        self.relu = nn.ReLU()
         self.downsample = downsample
         self.stride = stride
 
-    def forward(self, x):
+    def construct(self, x):
         residual = x
 
         out = self.conv1(x)
@@ -112,15 +113,15 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNet(nn.Module):
+class ResNet(nn.Cell):
     def __init__(self, block, layers, used_layers):
         self.inplanes = 64
         super(ResNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=0,  # 3
-                               bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, pad_mode='pad', padding=0  # 3
+                               )
+        self.bn1 = nn.BatchNorm2d(64, momentum=0.1)
+        self.relu = nn.ReLU()
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, pad_mode='same')
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
 
@@ -143,23 +144,25 @@ class ResNet(nn.Module):
         else:
             self.layer4 = lambda x: x  # identity
 
-        for m in self.modules():
+        for m in self.cells():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
+                m.weight = initializer(Normal(0, math.sqrt(2. / n)), [64,3,7,7], mindspore.float32)
             elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+                fill = ops.Fill()
+                m.weight = fill(mindspore.float32, (64, ), 1)
+                zeroslike = ops.ZerosLike()
+                m.bias = zeroslike(Tensor(shape=(64, ), dtype=mindspore.float32, init=One()))
 
     def _make_layer(self, block, planes, blocks, stride=1, dilation=1):
         downsample = None
         dd = dilation
         if stride != 1 or self.inplanes != planes * block.expansion:
             if stride == 1 and dilation == 1:
-                downsample = nn.Sequential(
+                downsample = nn.SequentialCell(
                     nn.Conv2d(self.inplanes, planes * block.expansion,
-                              kernel_size=1, stride=stride, bias=False),
-                    nn.BatchNorm2d(planes * block.expansion),
+                              kernel_size=1, stride=stride),
+                    nn.BatchNorm2d(planes * block.expansion, momentum=0.1),
                 )
             else:
                 if dilation > 1:
@@ -168,11 +171,11 @@ class ResNet(nn.Module):
                 else:
                     dd = 1
                     padding = 0
-                downsample = nn.Sequential(
+                downsample = nn.SequentialCell(
                     nn.Conv2d(self.inplanes, planes * block.expansion,
-                              kernel_size=3, stride=stride, bias=False,
-                              padding=padding, dilation=dd),
-                    nn.BatchNorm2d(planes * block.expansion),
+                              kernel_size=3, stride=stride,
+                              pad_mode='pad', padding=padding, dilation=dd),
+                    nn.BatchNorm2d(planes * block.expansion, momentum=0.1),
                 )
 
         layers = []
@@ -182,9 +185,9 @@ class ResNet(nn.Module):
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes, dilation=dilation))
 
-        return nn.Sequential(*layers)
+        return nn.SequentialCell(*layers)
     # @profile
-    def forward(self, x):
+    def construct(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x_ = self.relu(x)
@@ -226,12 +229,12 @@ def resnet50(**kwargs):
 
 
 if __name__ == '__main__':
+    context.set_context(mode=context.PYNATIVE_MODE)
     net = resnet50(used_layers=[2, 3, 4])
     print(net)
-    net = net.cuda()
 
-    template_var = torch.FloatTensor(1, 3, 127, 127).cuda()
-    search_var = torch.FloatTensor(1, 3, 255, 255).cuda()
+    template_var = mindspore.Tensor(shape = (1, 3, 127, 127), dtype=mindspore.float32, init=One())
+    search_var = mindspore.Tensor(shape = (1, 3, 255, 255), dtype=mindspore.float32, init=One())
 
     t = net(template_var)
     s = net(search_var)

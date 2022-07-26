@@ -7,7 +7,10 @@ from __future__ import unicode_literals
 import argparse
 import os
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
+import mindspore as ms
+from mindspore import context
 
 from hdn.core.config import cfg
 from hdn.tracker.tracker_builder import build_tracker
@@ -48,6 +51,8 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
 def main():
      # load config
+    context.set_context(mode=context.PYNATIVE_MODE)
+    context.set_context(device_target='GPU')
     print('args.config',args.config)
     cfg.merge_from_file(args.config)
 
@@ -61,8 +66,7 @@ def main():
     model = ModelBuilder()
     # load model
     print('args.snapshot',args.snapshot)
-
-    model = load_pretrain(model, args.snapshot).cuda().eval()
+    model = load_pretrain(model, args.snapshot)
 
     # build tracker
     tracker = build_tracker(model)
@@ -186,6 +190,8 @@ def main():
                     cv2.rectangle(img, (pred_bbox[0], pred_bbox[1]),
                                   (pred_bbox[0]+pred_bbox[2], pred_bbox[1]+pred_bbox[3]), (0, 255, 255), 2)
                 cv2.putText(img, str(idx), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                plt.imshow(img)
+                plt.show()
                 cv2.imshow(video.name, img)
                 cv2.waitKey(1)
         toc /= cv2.getTickFrequency()

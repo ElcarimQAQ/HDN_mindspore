@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from hdn.models.neck.neck_torch import AdjustLayer, AdjustAllLayer
+from hdn.models.neck.neck import AdjustLayer, AdjustAllLayer
 
 NECKS = {
          'AdjustLayer': AdjustLayer,

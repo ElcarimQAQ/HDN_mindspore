@@ -8,7 +8,8 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 import torch
-import torch.nn as nn
+import mindspore
+import mindspore.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from hdn.core.config import cfg
@@ -28,11 +29,11 @@ from hdn.utils.transform import combine_affine_c0, combine_affine_lt0, combine_a
 from hdn.utils.point import generate_points, generate_points_lp, lp_pick, get_center
 from homo_estimator.Deep_homography.Oneline_DLTv1.utils import DLT_solve
 from homo_estimator.Deep_homography.Oneline_DLTv1.utils import transform as Homo_STN
+from torchvision import transforms, utils
 
-
-criterion_l2 = nn.MSELoss(reduce=True, size_average=True)
-triplet_loss = nn.TripletMarginLoss(margin=1.0, p=1, reduce=False, size_average=False)
-class ModelBuilder(nn.Module):
+criterion_l2 = nn.MSELoss()
+# triplet_loss = nn.TripletMarginLoss(margin=1.0, p=1, reduce=False, size_average=False) #TODO:没有
+class ModelBuilder(nn.Cell):
     # @profile
     def __init__(self):
         super(ModelBuilder, self).__init__()
@@ -79,11 +80,14 @@ class ModelBuilder(nn.Module):
         delta[:, 1, :] = point[:, 1] - delta[:, 1, :]*8
         return delta
 
+
     def feature_extractor(self, x):
         xf = self.backbone(x)
+        plt.imshow(xf[-1].asnumpy()[0, 3, :, :])
+        plt.show()
         return xf #+ xf_lp
 
-
+    #TODO
     def template(self, z):
         z_lp = z[:, 3:6, :, :]
         z = z[:, 0:3, :, :]
@@ -94,6 +98,7 @@ class ModelBuilder(nn.Module):
             zf_lp = self.neck_lp(zf_lp) # please think about this part, not sure whether is proper.
         self.zf = zf
         self.zf_lp = zf_lp
+
 
     def update_template(self, z, rot):
         zf = self.feature_extractor(z)
@@ -128,7 +133,7 @@ class ModelBuilder(nn.Module):
             'cls_lp': cls_lp,
             'loc_lp': loc_lp
         }
-
+    # TODO
     def track_new(self, x, delta=[0,0]):
         # x: [1, 3, 255, 255]
         xf = self.feature_extractor(x)

@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 
 import numpy as np
 import torch
+import mindspore as ms
 import math
 from hdn.tracker.hdn_tracker import hdnTracker
 
@@ -31,7 +32,7 @@ class hdnTrackerHomo(hdnTracker):
         self.p = Point(cfg.POINT.STRIDE, cfg.TRAIN.OUTPUT_SIZE, cfg.TRAIN.EXEMPLAR_SIZE // 2)
         self.points_lp = self.generate_points_lp(cfg.POINT.STRIDE_LP, cfg.POINT.STRIDE_LP, cfg.TRAIN.OUTPUT_SIZE_LP) #self.p.points.transpose((1, 2, 0)).reshape(-1, 2)
         self.model = model
-        self.model.eval()
+        # self.model.eval()
 
     def mask_img(self, img, points ):# cx, cy, w, h, rot
         mask = np.zeros([img.shape[0], img.shape[1]])
@@ -103,6 +104,8 @@ class hdnTrackerHomo(hdnTracker):
                                                                             self.channel_average, islog=1) #for homo-estimation
         self.model.template(self.z_crop)
         self.init_img = img
+        # plt.imshow(img)
+        # plt.show()
         self.init_crop_size = np.array([w_z, h_z])
         self.init_size = self.size
         self.init_s_z = s_z

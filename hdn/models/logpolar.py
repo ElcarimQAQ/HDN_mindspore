@@ -2,11 +2,16 @@ import cv2
 import numpy as np
 import math
 
-import torch.nn as nn
+import os
+
+
 import torch.nn.functional as F
 import torch
 import matplotlib.pyplot as plt
 from hdn.core.config import cfg
+import mindspore as ms
+from mindspore import nn, ops, context
+
 
 def getPolarImg(img, original = None):
     """
@@ -21,11 +26,11 @@ def getPolarImg(img, original = None):
     o = tuple(np.round(original)) if original is not None else (sz[0] // 2, sz[1] // 2)
     result = cv2.logPolar(img, o, m, cv2.WARP_FILL_OUTLIERS + cv2.INTER_LINEAR )
     #test
-    # plt.imshow(result/255)
-    # plt.show()
-    # plt.imshow(img/255)
-    # plt.show()
-    # plt.close('all')
+    plt.imshow(result/255)
+    plt.show()
+    plt.imshow(img/255)
+    plt.show()
+    plt.close('all')
     return result
 
 def getLinearPolarImg(img, original = None):
@@ -47,7 +52,7 @@ def getLinearPolarImg(img, original = None):
 
 
 
-class STN_Polar(nn.Module):
+class STN_Polar(nn.Cell):
     """
     STN head
     """
@@ -57,8 +62,8 @@ class STN_Polar(nn.Module):
 
     def _prepare_grid(self, sz, delta):
         assert len(sz) == 2  # W, H
-        x_ls = torch.linspace(0, sz[0]-1, sz[0])
-        y_ls = torch.linspace(0, sz[1]-1, sz[1])
+        x_ls = ops.LinSpace(0, sz[0]-1, sz[0])
+        y_ls = ops.linspace(0, sz[1]-1, sz[1])
 
         # get log polar coordinates
         mag = math.log(sz[0]/2) / sz[0]
@@ -135,7 +140,7 @@ class STN_Polar(nn.Module):
 
 
 
-class STN_LinearPolar(nn.Module):
+class STN_LinearPolar(nn.Cell):
     """
     STN head
     """
@@ -193,15 +198,15 @@ class STN_LinearPolar(nn.Module):
         return x
 
 
-class Polar_Pick(nn.Module):
+class Polar_Pick(nn.Cell):
     """
     SiamFC head
     """
     def __init__(self):
         super(Polar_Pick, self).__init__()
         points = self.generate_points(cfg.POINT.STRIDE, cfg.TRAIN.OUTPUT_SIZE)
-        self.points = torch.from_numpy(points)
-        self.points_cuda = self.points.cuda()
+        self.points = ms.Tensor.from_numpy(points)
+        self.points_cuda = self.points
 
 
 
@@ -322,3 +327,11 @@ class Polar_Pick(nn.Module):
         out[:, 0] = point[:, 0] - delta[:, 0]
         out[:, 1] = point[:, 1] - delta[:, 1]
         return out
+
+if __name__ == '__main__':
+    img=cv2.imread("/home/lbyang/workspace/HDN_mindspore/testing_dataset/UCSB/bricks_dynamic_lighting/frame00001.jpg")
+    getPolarImg(img)
+    context.set_context(mode=context.PYNATIVE_MODE)
+    context.set_context(device_target='GPU')
+    logpolar_instance = STN_Polar(cfg.TRACK.INSTANCE_SIZE)
+    getPolar = Polar_Pick()

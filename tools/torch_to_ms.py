@@ -13,13 +13,17 @@
 # limitations under the License.
 # ============================================================================
 """change torch pth to MindSpore ckpt example."""
+import argparse
 
 from mindspore import Parameter
 from mindspore import log as logger
 from mindspore import save_checkpoint
 from mindspore.common.initializer import initializer
 from mindspore.common.tensor import Tensor
+from hdn.models.model_builder_e2e_unconstrained_v2 import ModelBuilder
+from hdn.core.config import cfg
 import torch
+import mindspore as ms
 
 
 def torch_to_ms(model, torch_model):
@@ -32,16 +36,30 @@ def torch_to_ms(model, torch_model):
 
     print("Start loading.")
     # load torch parameter and MindSpore parameter
-    torch_param_dict = torch_model.state_dict()
+    torch_param_dict = torch_model['state_dict']
     ms_param_dict = model.parameters_dict()
 
     for ms_key in ms_param_dict.keys():
         ms_key_tmp = ms_key.split('.')
-        if ms_key_tmp[0] == "head":
-            if ms_key_tmp[-1] == "weight":
-                update_torch_to_ms(torch_param_dict, ms_param_dict, "classifier.1.weight", ms_key)
-            elif ms_key_tmp[-1] == "bias":
-                update_torch_to_ms(torch_param_dict, ms_param_dict, "classifier.1.bias", ms_key)
+        torch_key = ""
+
+        if ms_key_tmp[0] == "backbone" or "neck" in ms_key_tmp[0] :
+            for v in ms_key_tmp[:-1]:
+                torch_key += v + "."
+
+            if ms_key_tmp[-1] == "beta":
+                torch_key += "bias"
+            elif ms_key_tmp[-1] == "gamma":
+                torch_key += "weight"
+            elif ms_key_tmp[-1] == "moving_mean":
+                torch_key += "running_mean"
+            elif ms_key_tmp[-1] == "moving_variance" :
+                torch_key += "running_var"
+            else:
+                torch_key = ms_key
+
+            update_torch_to_ms(torch_param_dict, ms_param_dict, torch_key, ms_key)
+
         else:
             del (ms_key_tmp[0])  # pylint: disable=superfluous-parens
             str_join = '.'
@@ -81,7 +99,7 @@ def torch_to_ms(model, torch_model):
                     else:
                         update_bn(torch_param_dict, ms_param_dict, ms_key, ms_key_tmp)
 
-    save_checkpoint(model, "mobilenetv2.ckpt")
+    save_checkpoint(model, "hdn.ckpt")
     print("Finish load.")
 
 
@@ -177,6 +195,36 @@ def _special_process_par(par, new_par):
         return True
     return False
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', default='', type=str,help='config file')
+args = parser.parse_args()
+
+def pytorch2mindspore(torch_model):
+    # 调用pytorch的load方法，读取pth文件
+    par_dict = torch_model['state_dict']
+    # 创建一个ms的params_list对象
+    params_list = []
+    # 遍历dict对象，对parameter依次进行处理
+    for name in par_dict:
+        param_dict = {}
+        parameter = par_dict[name]
+        # 按照ms格式构造对象
+        param_dict['name'] = name
+        param_dict['data'] = Tensor(parameter.cpu().numpy())
+        params_list.append(param_dict)
+    # 调用save_checkpoint，把params_list 保存成ms格式的ckpt
+    save_checkpoint(params_list,  'model/ms.ckpt')
+
 if __name__ == '__main__':
-    torchModel = torch.load('hdn-simi-sup-hm-unsup.pth')
-    print(torchModel.key)
+    # load config
+    print('args.config', args.config)
+    cfg.merge_from_file(args.config)
+    # pytorch2mindspore(torchModel_dict)
+
+    torch_model = torch.load('model/hdn-simi-sup-hm-unsup.pth')
+    ms_model = ModelBuilder()
+    torch_to_ms(ms_model, torch_model)
+    # param_dict = ms.load_checkpoint('hdn.ckpt')
+
+    # ms.load_param_into_net(ms_model,param_dict)
+

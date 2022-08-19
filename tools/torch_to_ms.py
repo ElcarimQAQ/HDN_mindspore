@@ -43,7 +43,7 @@ def torch_to_ms(model, torch_model):
         ms_key_tmp = ms_key.split('.')
         torch_key = ""
 
-        if ms_key_tmp[0] == "backbone" or "neck" in ms_key_tmp[0] :
+        if ms_key_tmp[0] == "backbone" or "neck" in ms_key_tmp[0] or "head" in ms_key_tmp[0] or ms_key_tmp[0] == "hm_net":
             for v in ms_key_tmp[:-1]:
                 torch_key += v + "."
 

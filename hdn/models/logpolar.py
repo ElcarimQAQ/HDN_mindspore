@@ -5,12 +5,10 @@ import math
 import os
 
 
-import torch.nn.functional as F
-import torch
 import matplotlib.pyplot as plt
 from hdn.core.config import cfg
 import mindspore as ms
-from mindspore import nn, ops, context
+from mindspore import nn, ops, context, Tensor, numpy
 
 
 def getPolarImg(img, original = None):
@@ -26,11 +24,11 @@ def getPolarImg(img, original = None):
     o = tuple(np.round(original)) if original is not None else (sz[0] // 2, sz[1] // 2)
     result = cv2.logPolar(img, o, m, cv2.WARP_FILL_OUTLIERS + cv2.INTER_LINEAR )
     #test
-    plt.imshow(result/255)
-    plt.show()
-    plt.imshow(img/255)
-    plt.show()
-    plt.close('all')
+    # plt.imshow(result/255)
+    # plt.show()
+    # plt.imshow(img/255)
+    # plt.show()
+    # plt.close('all')
     return result
 
 def getLinearPolarImg(img, original = None):
@@ -62,21 +60,21 @@ class STN_Polar(nn.Cell):
 
     def _prepare_grid(self, sz, delta):
         assert len(sz) == 2  # W, H
-        x_ls = ops.LinSpace(0, sz[0]-1, sz[0])
-        y_ls = ops.linspace(0, sz[1]-1, sz[1])
+        x_ls = ops.LinSpace()(Tensor(0, ms.float32), Tensor(sz[0]-1, ms.float32), sz[0])
+        y_ls = ops.LinSpace()(Tensor(0, ms.float32), Tensor(sz[1]-1, ms.float32), sz[1])
 
         # get log polar coordinates
         mag = math.log(sz[0]/2) / sz[0]
         # rho = (torch.exp(mag * x_ls) - 1.0) + delta[0]
-        rho = (torch.exp(mag * x_ls) - 1.0)
+        rho = (ops.Exp()(mag * x_ls) - 1.0)
         theta = y_ls * 2.0 * math.pi / sz[1] + delta[1]# add rotation
-        y, x = torch.meshgrid([theta, rho])
-        cosy = torch.cos(y)
-        siny = torch.sin(y)
+        y, x = ops.Meshgrid(indexing="ij")((theta, rho))
+        cosy = ops.Cos()(y)
+        siny = ops.Sin()(y)
 
         # construct final indices
-        self.indices_x = torch.mul(x, cosy)
-        self.indices_y = torch.mul(x, siny)
+        self.indices_x = ops.Mul()(x, cosy)
+        self.indices_y = ops.Mul()(x, siny)
 
         # # test
         # y, x = torch.meshgrid([x_ls, y_ls])
@@ -84,8 +82,8 @@ class STN_Polar(nn.Cell):
         # self.indices_y = y.cuda()
     def _prepare_batch_grid(self, sz, delta, batch):
         assert len(sz) == 2  # W, H
-        x_ls = torch.linspace(0, sz[0]-1, sz[0])
-        y_ls = torch.linspace(0, sz[1]-1, sz[1])
+        x_ls = ops.LinSpace()(Tensor(0, ms.float32), Tensor(sz[0] - 1, ms.float32), sz[0])
+        y_ls = ops.LinSpace()(Tensor(0, ms.float32), Tensor(sz[1] - 1, ms.float32), sz[1])
 
         # get log polar coordinates
         mag = math.log(sz[0]/2) / sz[0]
@@ -112,28 +110,29 @@ class STN_Polar(nn.Cell):
         assert len(sz) == 4 # N, C, W, H
         batch = sz[0]
         # generate grid mesh
-        x = self.indices_x.cuda() # for multi-gpus
-        y = self.indices_y.cuda()
-        indices_x = x.repeat([batch, 1, 1]) + polar[:, 0].unsqueeze(1).unsqueeze(1)
-        indices_y = y.repeat([batch, 1, 1]) + polar[:, 1].unsqueeze(1).unsqueeze(1)
+        x = self.indices_x # for multi-gpus
+        y = self.indices_y
+        expand_dims = ops.ExpandDims()
+        indices_x = numpy.tile(x, (batch, 1, 1)) + expand_dims(expand_dims(polar[:, 0], 1), 1)
+        indices_y = numpy.tile(y, (batch, 1, 1)) + expand_dims(expand_dims(polar[:, 1], 1), 1)
         # print('indices_x.shape',indices_x.shape)
         # print('indices_y.shape',indices_y.shape)
-        indices = torch.cat((indices_x.unsqueeze(3)/(sz[2]//2), indices_y.unsqueeze(3)/(sz[3]//2)), 3)
-
+        # indices = ops.concat((indices_x.unsqueeze(3)/(sz[2]//2), indices_y.unsqueeze(3)/(sz[3]//2)), 3)
+        indices = ops.Concat(3)((expand_dims(indices_x, 3)/(sz[2]//2), expand_dims(indices_y, 3)/(sz[3]//2)))
         return indices
 
-    def forward(self, x, polar, delta=[0,0]):
+    def construct(self, x, polar, delta=[0,0]):
         self._prepare_grid(self._orignal_sz, delta)
-        grid = self.get_logpolar_grid(polar, x.size())#[1 127 127 2]
+        grid = self.get_logpolar_grid(polar, x.shape)#[1 127 127 2]
         # self.test_polar_points(grid.cpu().squeeze(0).view(-1,2))
-        x = F.grid_sample(x, grid, mode='bilinear', padding_mode='border')
+        x = ops.grid_sample(x, grid, interpolation_mode='bilinear', padding_mode='border')  #Todo
 
         # test plt log-polar img
-        # x_lp_cpu = x[0].cpu().detach().squeeze(0).permute(1,2,0).numpy()
+        x_lp_cpu = ops.Transpose()(x[0],(1,2,0)).asnumpy()
         # plt.imshow(x_lp_cpu/256)
         # fig = plt.figure()
         # fig,ax = plt.subplots(1,dpi=96)
-        # # ax.plot([polar[0], ], [polar[1], ], c='r', marker='x')
+        # ax.plot([polar[0], ], [polar[1], ], c='r', marker='x')
         # plt.show()
         # plt.close('all')
         return x, grid
@@ -186,7 +185,7 @@ class STN_LinearPolar(nn.Cell):
         y = self.indices_y.cuda()
         indices_x = x.repeat([batch, 1, 1]) + polar[:, 0].unsqueeze(1).unsqueeze(1)
         indices_y = y.repeat([batch, 1, 1]) + polar[:, 1].unsqueeze(1).unsqueeze(1)
-        indices = torch.cat((indices_x.unsqueeze(3)/(sz[2]//2), indices_y.unsqueeze(3)/(sz[3]//2)), 3)
+        indices = ops.concat((indices_x.unsqueeze(3)/(sz[2]//2), indices_y.unsqueeze(3)/(sz[3]//2)), 3)
 
         return indices
 
@@ -225,7 +224,7 @@ class Polar_Pick(nn.Cell):
         sizes = r.size()
         batch = sizes[0]
         m = r.view(batch, -1).argmax(1).view(-1, 1)
-        indices = torch.cat((m // sizes[2], m % sizes[2]), dim=1)
+        indices = ops.concat((m // sizes[2], m % sizes[2]), dim=1)
         indices = (indices - (sizes[2]-1)/2) / (sizes[2]-1)/2
         return indices
 
@@ -240,7 +239,7 @@ class Polar_Pick(nn.Cell):
         x, y = torch.meshgrid([x_ls, y_ls])
         indices_x = torch.mul(sm, x.unsqueeze(0).cuda()).sum([1, 2]) / (sizes[1] - 1)
         indices_y = torch.mul(sm, y.unsqueeze(0).cuda()).sum([1, 2]) / (sizes[2] - 1)
-        indices = torch.cat((indices_x.view(-1, 1), indices_y.view(-1, 1)), 1)
+        indices = ops.concat((indices_x.view(-1, 1), indices_y.view(-1, 1)), 1)
         return indices
 
     def test_self_points(self):

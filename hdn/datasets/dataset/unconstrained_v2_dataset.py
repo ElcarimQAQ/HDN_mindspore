@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
-import torchvision.transforms as transforms
+from mindspore.dataset import  transforms
 from hdn.datasets.custom_transforms import Normalize, ToTensor
 import time
 import json
@@ -19,7 +19,7 @@ import math
 
 import cv2
 import numpy as np
-from torch.utils.data import Dataset
+from mindspore.dataset import vision
 from hdn.utils.transform import img_shift_crop_w_h
 from hdn.utils.bbox import center2corner, Center, corner2center, SimT
 from hdn.datasets.point_target.point_target import PointTarget, PointTargetLP, PointTargetRot
@@ -35,12 +35,12 @@ from memory_profiler import profile
 pyv = sys.version[0]
 if pyv[0] == '3':
     cv2.ocl.setUseOpenCL(False)
-class BANDataset(Dataset):
+class  BANDataset():
     # @profile
     def __init__(self,):
         super(BANDataset, self).__init__()
         self.transforms = transforms.Compose([
-            transforms.Grayscale(1),
+            vision.Grayscale(1)
             # Normalize(),
             # ToTensor()
         ])

@@ -4,9 +4,6 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 from hdn.models.neck.neck import AdjustLayer, AdjustAllLayer
 

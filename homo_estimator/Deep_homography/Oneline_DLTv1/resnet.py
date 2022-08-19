@@ -46,7 +46,7 @@ def normMask(mask, strenth=0.5):
     max_value = mask.reshape(batch_size, -1).max(1)[0]
     max_value = max_value.reshape(batch_size, 1, 1, 1)
     mask = mask / (max_value * strenth)
-    mask = torch.clamp(mask, 0, 1)
+    mask = ops.clip_by_value(mask, 0, 1)
 
     return mask
 
@@ -209,7 +209,7 @@ class ResNet(nn.Module):
     def forward(self, org_imges, input_tesnors, h4p, patch_indices):
         batch_size, _, img_h, img_w = org_imges.size()
         _, _, patch_size_h, patch_size_w = input_tesnors.size()
-        y_t = torch.arange(0, batch_size * img_w * img_h,
+        y_t = numpy.arange(0, batch_size * img_w * img_h,
                            img_w * img_h)
         batch_indices_tensor = y_t.unsqueeze(1).expand(y_t.shape[0], patch_size_h * patch_size_w).reshape(-1)
         # M_tensor = torch.tensor([[img_w / 2.0, 0., img_w / 2.0],
@@ -250,7 +250,7 @@ class ResNet(nn.Module):
 
         patch_1_res = torch.mul(patch_1, mask_I1)  # mask
         patch_2_res = torch.mul(patch_2, mask_I2)  # mask
-        x = torch.cat((patch_1_res, patch_2_res), dim=1)
+        x = ops.concat((patch_1_res, patch_2_res), dim=1)
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -299,7 +299,7 @@ class ResNet(nn.Module):
         batch_size, _, img_h, img_w = org_imges.size()
         _, _, patch_size_h, patch_size_w = input_tesnors.size()
 
-        y_t = torch.arange(0, batch_size * img_w * img_h,
+        y_t = numpy.arange(0, batch_size * img_w * img_h,
                            img_w * img_h)
         batch_indices_tensor = y_t.unsqueeze(1).expand(y_t.shape[0], patch_size_h * patch_size_w).reshape(-1)
 
@@ -332,7 +332,7 @@ class ResNet(nn.Module):
 
         patch_1_res = torch.mul(patch_1, mask_I1)
         patch_2_res = torch.mul(patch_2, mask_I2)
-        x = torch.cat((patch_1_res, patch_2_res), dim=1)
+        x = ops.concat((patch_1_res, patch_2_res), dim=1)
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)

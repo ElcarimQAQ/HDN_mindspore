@@ -3,17 +3,16 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import mindspore as ms
+from mindspore import  nn, ops
 
 from hdn.core.xcorr import xcorr_fast, xcorr_depthwise
 
-class BAN(nn.Module):
+class BAN(nn.Cell):
     def __init__(self):
         super(BAN, self).__init__()
 
-    def forward(self, z_f, x_f):
+    def construct(self, z_f, x_f):
         raise NotImplementedError
 
 class UPChannelBAN(BAN):
@@ -48,29 +47,29 @@ class UPChannelBAN(BAN):
         return cls, loc
 
 
-class DepthwiseXCorr(nn.Module):
+class DepthwiseXCorr(nn.Cell):
 
     def __init__(self, in_channels, hidden, out_channels, kernel_size=3):
         super(DepthwiseXCorr, self).__init__()
-        self.conv_kernel = nn.Sequential(
-                nn.Conv2d(in_channels, hidden, kernel_size=kernel_size, bias=False),
+        self.conv_kernel = nn.SequentialCell(
+                nn.Conv2d(in_channels, hidden, kernel_size=kernel_size, pad_mode='valid'),
                 nn.BatchNorm2d(hidden),
-                nn.ReLU(inplace=True),
+                nn.ReLU(),
                 )
-        self.conv_search = nn.Sequential(
-                nn.Conv2d(in_channels, hidden, kernel_size=kernel_size, bias=False),
+        self.conv_search = nn.SequentialCell(
+                nn.Conv2d(in_channels, hidden, kernel_size=kernel_size, pad_mode='valid'),
                 nn.BatchNorm2d(hidden),
-                nn.ReLU(inplace=True),
+                nn.ReLU(),
                 )
-        self.head = nn.Sequential(
-                nn.Conv2d(hidden, hidden, kernel_size=1, bias=False),
+        self.head = nn.SequentialCell(
+                nn.Conv2d(hidden, hidden, kernel_size=1,pad_mode='valid'),
                 nn.BatchNorm2d(hidden),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(hidden, out_channels, kernel_size=1)
+                nn.ReLU(),
+                nn.Conv2d(hidden, out_channels, kernel_size=1, pad_mode='valid')
                 )
         
 
-    def forward(self, kernel, search):
+    def construct(self, kernel, search):
         kernel = self.conv_kernel(kernel)
         search = self.conv_search(search)
         feature = xcorr_depthwise(search, kernel)
@@ -84,7 +83,7 @@ class DepthwiseBAN(BAN):
         self.cls = DepthwiseXCorr(in_channels, out_channels, cls_out_channels)
         self.loc = DepthwiseXCorr(in_channels, out_channels, 2)
 
-    def forward(self, z_f, x_f):
+    def construct(self, z_f, x_f):
         cls = self.cls(z_f, x_f)
         loc = self.loc(z_f, x_f)
         return cls, loc
@@ -94,12 +93,12 @@ class MultiBAN(BAN):
         super(MultiBAN, self).__init__()
         self.weighted = weighted
         for i in range(len(in_channels)):
-            self.add_module('box'+str(i+2), DepthwiseBAN(in_channels[i], in_channels[i], cls_out_channels))
+            self.insert_child_to_cell('box'+str(i+2), DepthwiseBAN(in_channels[i], in_channels[i], cls_out_channels))
         if self.weighted:
-            self.cls_weight = nn.Parameter(torch.ones(len(in_channels)))
-            self.loc_weight = nn.Parameter(torch.ones(len(in_channels)))
-        self.loc_scale = nn.Parameter(torch.ones(len(in_channels)))
-    def forward(self, z_fs, x_fs):
+            self.cls_weight = ms.Parameter(ops.Ones()(len(in_channels), ms.float32))
+            self.loc_weight = ms.Parameter(ops.Ones()(len(in_channels), ms.float32))
+        self.loc_scale = ms.Parameter(ops.Ones()(len(in_channels), ms.float32))
+    def construct(self, z_fs, x_fs):
         cls = []
         loc = []
         for idx, (z_f, x_f) in enumerate(zip(z_fs, x_fs), start=2):
@@ -110,8 +109,8 @@ class MultiBAN(BAN):
 
 
         if self.weighted:
-            cls_weight = F.softmax(self.cls_weight, 0)
-            loc_weight = F.softmax(self.loc_weight, 0)
+            cls_weight = ops.Softmax(0)(self.cls_weight)
+            loc_weight = ops.Softmax(0)(self.loc_weight)
 
         def avg(lst):
             return sum(lst) / len(lst)

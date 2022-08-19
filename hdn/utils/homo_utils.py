@@ -29,8 +29,8 @@ def DLT_solve(src_p, off_set):
                 src_ps = h4p
                 off_sets = pred_h4p
             else:
-                src_ps = torch.cat((src_ps, h4p), axis=1)
-                off_sets = torch.cat((off_sets, pred_h4p), axis=1)
+                src_ps = ops.concat((src_ps, h4p), axis=1)
+                off_sets = ops.concat((off_sets, pred_h4p), axis=1)
 
     bs, n, h, w = src_ps.shape
 
@@ -44,25 +44,25 @@ def DLT_solve(src_p, off_set):
     ones = torch.ones(N, 4, 1)
     if torch.cuda.is_available():
         ones = ones.cuda()
-    xy1 = torch.cat((src_ps, ones), 2)
-    zeros = torch.zeros_like(xy1)
+    xy1 = ops.concat((src_ps, ones), 2)
+    zeros = ops.zeros_like(xy1)
     if torch.cuda.is_available():
         zeros = zeros.cuda()
 
-    xyu, xyd = torch.cat((xy1, zeros), 2), torch.cat((zeros, xy1), 2)
-    M1 = torch.cat((xyu, xyd), 2).reshape(N, -1, 6)
-    M2 = torch.matmul(
+    xyu, xyd = ops.concat((xy1, zeros), 2), ops.concat((zeros, xy1), 2)
+    M1 = ops.concat((xyu, xyd), 2).reshape(N, -1, 6)
+    M2 = ops.matmul(
         dst_p.reshape(-1, 2, 1),
         src_ps.reshape(-1, 1, 2),
     ).reshape(N, -1, 2)
 
-    A = torch.cat((M1, -M2), 2)
+    A = ops.concat((M1, -M2), 2)
     b = dst_p.reshape(N, -1, 1)
 
     Ainv = torch.inverse(A)
-    h8 = torch.matmul(Ainv, b).reshape(N, 8)
+    h8 = ops.matmul(Ainv, b).reshape(N, 8)
 
-    H = torch.cat((h8, ones[:, 0, :]), 1).reshape(N, 3, 3)
+    H = ops.concat((h8, ones[:, 0, :]), 1).reshape(N, 3, 3)
     H = H.reshape(bs, n, 3, 3)
     return H
 
@@ -108,7 +108,7 @@ def transformer(U, theta, out_size, **kwargs):
         rep = rep.int()
         x = x.int()
 
-        x = torch.matmul(x.reshape([-1, 1]), rep)
+        x = ops.matmul(x.reshape([-1, 1]), rep)
         return x.reshape([-1])
 
     def _interpolate(im, x, y, out_size, scale_h):
@@ -132,14 +132,14 @@ def transformer(U, theta, out_size, **kwargs):
         y0 = torch.floor(y).int()
         y1 = y0 + 1
 
-        x0 = torch.clamp(x0, zero, max_x)
-        x1 = torch.clamp(x1, zero, max_x)
-        y0 = torch.clamp(y0, zero, max_y)
-        y1 = torch.clamp(y1, zero, max_y)
+        x0 = ops.clip_by_value(x0, zero, max_x)
+        x1 = ops.clip_by_value(x1, zero, max_x)
+        y0 = ops.clip_by_value(y0, zero, max_y)
+        y1 = ops.clip_by_value(y1, zero, max_y)
         dim2 = torch.from_numpy(np.array(width))
         dim1 = torch.from_numpy(np.array(width * height))
 
-        base = _repeat(torch.arange(0, num_batch) * dim1, out_height * out_width)
+        base = _repeat(numpy.arange(0, num_batch) * dim1, out_height * out_width)
         if torch.cuda.is_available():
             dim2 = dim2.cuda()
             dim1 = dim1.cuda()
@@ -191,21 +191,21 @@ def transformer(U, theta, out_size, **kwargs):
     def _meshgrid(height, width, scale_h):
 
         if scale_h:
-            x_t = torch.matmul(torch.ones([height, 1]),
-                               torch.transpose(torch.unsqueeze(torch.linspace(-1.0, 1.0, width), 1), 1, 0))
-            y_t = torch.matmul(torch.unsqueeze(torch.linspace(-1.0, 1.0, height), 1),
+            x_t = ops.matmul(torch.ones([height, 1]),
+                               ops.transpose(torch.unsqueeze(torch.linspace(-1.0, 1.0, width), 1), (1, 0)))
+            y_t = ops.matmul(torch.unsqueeze(torch.linspace(-1.0, 1.0, height), 1),
                                torch.ones([1, width]))
         else:
-            x_t = torch.matmul(torch.ones([height, 1]),
-                               torch.transpose(torch.unsqueeze(torch.linspace(0.0, width.float(), width), 1), 1, 0))
-            y_t = torch.matmul(torch.unsqueeze(torch.linspace(0.0, height.float(), height), 1),
+            x_t = ops.matmul(torch.ones([height, 1]),
+                               ops.transpose(torch.unsqueeze(torch.linspace(0.0, width.float(), width), 1), (1, 0)))
+            y_t = ops.matmul(torch.unsqueeze(torch.linspace(0.0, height.float(), height), 1),
                                torch.ones([1, width]))
 
         x_t_flat = x_t.reshape((1, -1)).float()
         y_t_flat = y_t.reshape((1, -1)).float()
 
         ones = torch.ones_like(x_t_flat)
-        grid = torch.cat([x_t_flat, y_t_flat, ones], 0)
+        grid = ops.concat([x_t_flat, y_t_flat, ones], 0)
         if torch.cuda.is_available():
             grid = grid.cuda()
         return grid
@@ -222,7 +222,7 @@ def transformer(U, theta, out_size, **kwargs):
         grid = grid.expand(num_batch, shape[1])
         grid = grid.reshape([num_batch, 3, -1])
 
-        T_g = torch.matmul(theta, grid)
+        T_g = ops.matmul(theta, grid)
         x_s = T_g[:, 0, :]
         y_s = T_g[:, 1, :]
         t_s = T_g[:, 2, :]
@@ -231,10 +231,10 @@ def transformer(U, theta, out_size, **kwargs):
 
         # smaller
         small = 1e-7
-        smallers = 1e-6 * (1.0 - torch.ge(torch.abs(t_s_flat), small).float())
+        smallers = 1e-6 * (1.0 - ops.ge(torch.abs(t_s_flat), small).float())
 
         t_s_flat = t_s_flat + smallers
-        condition = torch.sum(torch.gt(torch.abs(t_s_flat), small).float())
+        condition = torch.sum(ops.gt(torch.abs(t_s_flat), small).float())
         # Ty changed
         x_s_flat = x_s.reshape([-1]) / t_s_flat
         y_s_flat = y_s.reshape([-1]) / t_s_flat
@@ -257,7 +257,7 @@ def transform(patch_size_h, patch_size_w, M_tile_inv, H_mat, M_tile, I1, patch_i
     batch_size, num_channels, img_h, img_w = I1.size()
     if torch.cuda.is_available():
         M_tile_inv = M_tile_inv.cuda()
-    H_mat = torch.matmul(torch.matmul(M_tile_inv, H_mat), M_tile)
+    H_mat = ops.matmul(ops.matmul(M_tile_inv, H_mat), M_tile)
     # Transform image 1 (large image) to image 2
     out_size = (img_h, img_w)
     warped_images, _ = transformer(I1, H_mat, out_size)

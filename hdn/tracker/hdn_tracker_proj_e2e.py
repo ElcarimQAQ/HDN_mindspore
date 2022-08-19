@@ -5,9 +5,11 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import numpy as np
-import torch
 import mindspore as ms
 import math
+
+from mindspore import ops
+
 from hdn.tracker.hdn_tracker import hdnTracker
 
 from hdn.core.config import cfg
@@ -43,11 +45,15 @@ class hdnTrackerHomo(hdnTracker):
 
     def homo_estimate(self, tmp, search, tmp_mask):
         merge_info = merge_tmp_search(tmp, search)
-        org_imgs = torch.Tensor(merge_info['org_imgs']).float().unsqueeze(0).cuda()
-        input_tensors = torch.Tensor(merge_info['input_tensors']).float().unsqueeze(0).cuda()
-        patch_indices = torch.Tensor(merge_info['patch_indices']).float().unsqueeze(0).cuda()
-        four_points = torch.Tensor(merge_info['four_points']).float().unsqueeze(0).cuda()  # ([1, 2, 360, 640])
-        tmp_mask  = torch.from_numpy(tmp_mask).cuda()
+        org_imgs = ops.Cast()(ms.Tensor(merge_info['org_imgs']), ms.float32)
+        org_imgs = ops.ExpandDims()(org_imgs, 0)
+        input_tensors = ops.Cast()(ms.Tensor(merge_info['input_tensors']), ms.float32)
+        input_tensors = ops.ExpandDims()(input_tensors, 0)
+        patch_indices = ops.Cast()(ms.Tensor(merge_info['patch_indices']), ms.float32)
+        patch_indices = ops.ExpandDims()(patch_indices, 0)
+        four_points = ops.Cast()(ms.Tensor(merge_info['four_points']), ms.float32) # ([1, 2, 360, 640])
+        four_points = ops.ExpandDims()(four_points, 0)
+        tmp_mask  = ms.Tensor.from_numpy(tmp_mask)
         data = {}
         data['org_imgs'] = org_imgs
         data['input_tensors'] = input_tensors
@@ -244,8 +250,8 @@ class hdnTrackerHomo(hdnTracker):
         H_hm_comp = np.identity(3)
         for i in range(1): # iterate
             H_hm, homo_score, simi_score = self.homo_estimate(self.init_homo_tmp, homo_search_img, mask_tmp)
-            homo_score =  homo_score.detach().cpu().numpy()
-            H_hm = H_hm.detach().cpu().squeeze(0).numpy()
+            homo_score =  homo_score.asnumpy()
+            H_hm = H_hm.squeeze(0).asnumpy()
             H_hm = np.linalg.inv(H_hm)
             H_hm = (1.0 / H_hm.item(8)) * H_hm
             homo_search_img = np.expand_dims(cv2.warpPerspective(homo_search_img[0], np.linalg.inv(H_hm), (127,127),

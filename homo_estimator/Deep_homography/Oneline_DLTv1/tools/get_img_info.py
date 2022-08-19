@@ -1,6 +1,7 @@
 # coding: utf-8
 import argparse
 from homo_estimator.Deep_homography.Oneline_DLTv1.dataset import *
+from mindspore import ops
 import numpy as np
 """
 In order to get template and search images info as input of homo-estiamtor network.
@@ -22,7 +23,7 @@ def get_template_info(template):
     _x_mesh, _y_mesh = make_mesh(_patch_w, _patch_h)
 
     tmp_tensor = template[0]  # template 1*3*127*127, already croped
-    tmp = tmp_tensor.permute(1, 2, 0).numpy()# HwC
+    tmp = ops.Transpose()(tmp_tensor, (1,2,0)).asnumpy() # HwC
     # load img2
     height, width = tmp.shape[:2]
 
@@ -55,7 +56,7 @@ def get_search_info(search):
     _WIDTH = 127 # 640 560
     _HEIGHT = 127 # 360 315
     search_tensor = search[0]  # template 1*3*127*127, already croped
-    search = search_tensor.cpu().permute(1, 2, 0).numpy()# HwCf
+    search = ops.Transpose()(search_tensor, (1, 2, 0)).asnumpy()# HwC
     # load img2
     height, width = search.shape[:2]
     if height != _HEIGHT or width != _WIDTH:

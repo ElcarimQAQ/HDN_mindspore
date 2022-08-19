@@ -67,14 +67,15 @@ class UCSBDataset(Dataset):
         pbar = tqdm(meta_data.keys(), desc='loading '+name, ncols=100)
         self.videos = {}
         for video in pbar:
-            pbar.set_postfix_str(video)
-            self.videos[video] = UCSBVideo(video,
-                                          dataset_root,
-                                          meta_data[video]['video_dir'],
-                                          meta_data[video]['init_rect'],
-                                          meta_data[video]['img_names'],
-                                          meta_data[video]['gt_rect'],
-                                          load_img)
+            if video == 'bricks_rotation':
+                pbar.set_postfix_str(video)
+                self.videos[video] = UCSBVideo(video,
+                                              dataset_root,
+                                              meta_data[video]['video_dir'],
+                                              meta_data[video]['init_rect'],
+                                              meta_data[video]['img_names'],
+                                              meta_data[video]['gt_rect'],
+                                              load_img)
 
         # set attr
         attr = []

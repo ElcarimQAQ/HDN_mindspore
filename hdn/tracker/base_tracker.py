@@ -9,6 +9,7 @@ import cv2
 import numpy
 import numpy as np
 import mindspore as ms
+from  mindspore import ops
 
 from hdn.core.config import cfg
 from hdn.models.logpolar import getPolarImg, getLinearPolarImg
@@ -40,8 +41,10 @@ class BaseTracker(object):
 class SiameseTracker(BaseTracker):
 
     def _convert_bbox(self, delta, point):# delta:1*4*25*25
-        delta = delta.permute(1, 2, 3, 0).contiguous().view(4, -1)
-        delta = delta.detach().cpu().numpy()#4*625
+        # delta = delta.permute(1, 2, 3, 0).contiguous().view(4, -1)
+        # delta = delta.detach().cpu().numpy()#4*625
+        delta = ops.Transpose()(delta, (1, 2, 3, 0)).view(4, -1)
+        delta = delta.asnumpy()
         delta[0, :] = point[:, 0] - delta[0, :]
         delta[1, :] = point[:, 1] - delta[1, :]
         delta[2, :] = point[:, 0] + delta[2, :]
@@ -49,13 +52,13 @@ class SiameseTracker(BaseTracker):
         delta[0, :], delta[1, :], delta[2, :], delta[3, :] = corner2center(delta)
         return delta
     def _convert_delta(self, delta):
-        delta = delta.permute(1, 2, 3, 0).contiguous().view(4, -1)
-        delta = delta.detach().cpu().numpy()
+        delta = ops.Transpose()(delta, (1, 2, 3, 0)).view(4, -1)
+        delta = delta.asnumpy()
         return delta
 
     def _convert_c(self, delta, point):
-        delta = delta.permute(1, 2, 3, 0).contiguous().view(2,-1)
-        delta = delta.detach().cpu().numpy()
+        delta = ops.Transpose()(delta,(1, 2, 3, 0)).view(2, -1)
+        delta = delta.asnumpy()
         delta[0, :] = point[:, 0] - delta[0, :]*8
         delta[1, :] = point[:, 1] - delta[1, :]*8
         return delta
@@ -132,9 +135,8 @@ class SiameseTracker(BaseTracker):
         im_patch = im_patch.transpose(2, 0, 1)
         im_patch = im_patch[np.newaxis, :, :, :]
         im_patch = im_patch.astype(np.float32)
+        im_patch = numpy.ascontiguousarray(im_patch)
         im_patch = ms.Tensor.from_numpy(im_patch)
-        if cfg.CUDA:
-            im_patch = im_patch.cuda()
         return im_patch
 
     def get_subwindow_for_homo(self, im, pos, model_sz, original_sz, avg_chans, islog=False):

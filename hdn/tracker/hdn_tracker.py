@@ -1,4 +1,5 @@
 #Copyright 2021, XinruiZhan
+#Copyright 2022, LibangYang
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -7,6 +8,7 @@ from __future__ import unicode_literals
 import numpy as np
 import math
 
+from mindspore import ops
 from hdn.core.config import cfg
 from hdn.tracker.base_tracker import SiameseTracker
 from hdn.utils.bbox import corner2center, cetner2poly, getRotMatrix, transformPoly,center2corner
@@ -48,8 +50,8 @@ class hdnTracker(SiameseTracker):
         return points
 
     def _convert_logpolar_simi(self, delta, point, peak_idx, idx=0):
-        delta = delta.permute(1, 2, 3, 0).contiguous().view(4, -1)
-        delta = delta.detach().cpu().numpy()
+        delta = ops.Transpose()(delta, (1, 2, 3, 0)).view(4, -1)
+        delta = delta.asnumpy()
         # rotation
         delta[2, :] = point[:, 1] - delta[2, :] * cfg.POINT.STRIDE_LP
         delta[3, :] = point[:, 1] + delta[3, :] * cfg.POINT.STRIDE_LP
@@ -80,11 +82,12 @@ class hdnTracker(SiameseTracker):
 
     def _convert_score(self, score):
         if self.cls_out_channels == 1:
-            score = score.permute(1, 2, 3, 0).contiguous().view(-1)
-            score = score.sigmoid().detach().cpu().numpy()
+            score = ops.Transpose()(score, (1, 2, 3, 0)).view(-1)
+            score = ops.Sigmoid()(score).asnumpy()
         else:
-            score = score.permute(1, 2, 3, 0).contiguous().view(self.cls_out_channels, -1).permute(1, 0)
-            score = score.softmax(1).detach()[:, 1].cpu().numpy()
+            score = ops.Transpose()(score, (1, 2, 3, 0)).view(self.cls_out_channels, -1)
+            score = ops.Transpose()(score, (1, 0))
+            score = ops.Softmax(1)(score)[:, 1].asnumpy() # Todo :变化较大
         return score
 
     def mask_img(self, img, points ):# cx, cy, w, h, rot

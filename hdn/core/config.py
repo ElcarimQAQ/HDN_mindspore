@@ -19,9 +19,9 @@ __C.CUDA = True
 __C.BASE = CN()
 __C.BASE.PROJ_PATH = '/home/lbyang/workspace/HDN_mindspore/' #
 __C.BASE.BASE_PATH = '/home/lbyang/workspace/'#base path of other resources
-__C.BASE.DATA_PATH = '/home/lbyang/data/'
+__C.BASE.DATA_PATH = '/data/'
 # __C.BASE.DATA_PATH = '/home/zhanxinrui/Downloads/Dataset/SOT/POT/'#POT base path
-__C.BASE.DATA_ROOT = '/home/lbyang/data/'
+__C.BASE.DATA_ROOT = '/data/'
 # __C.BASE.DATA_ROOT = '/home/zhanxinrui/Downloads/Dataset/'#other datasets base path
 
 # ------------------------------------------------------------------------ #

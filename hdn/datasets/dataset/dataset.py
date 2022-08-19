@@ -3,7 +3,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
-import torchvision.transforms as transforms
+from mindspore.dataset import  transforms
 from hdn.datasets.custom_transforms import Normalize, ToTensor
 
 import orjson as json
@@ -16,7 +16,6 @@ import math
 
 import cv2
 import numpy as np
-from torch.utils.data import Dataset
 
 from hdn.utils.bbox import center2corner, Center, corner2center, SimT
 from hdn.datasets.point_target.point_target import PointTarget, PointTargetLP, PointTargetRot
@@ -66,8 +65,8 @@ class SubDataset(object):
                 logger.warning("{} has no tracks".format(video))
                 del meta_data[video]
 
-        self.labels = meta_data
-        self.num = len(self.labels)  #video_num
+        self.labels = meta_data  # Todo :不能用dict？
+        self.num = len(meta_data)  #video_num
         self.num_use = self.num if self.num_use == -1 else self.num_use
         self.videos = list(meta_data.keys())
         logger.info("{} loaded".format(self.name))
@@ -148,7 +147,7 @@ class SubDataset(object):
         return self.num
 
 
-class BANDataset(Dataset):
+class BANDataset():
 
     def __init__(self,):
         super(BANDataset, self).__init__()

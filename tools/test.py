@@ -51,8 +51,6 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
 def main():
      # load config
-    context.set_context(mode=context.PYNATIVE_MODE)
-    context.set_context(device_target='GPU')
     print('args.config',args.config)
     cfg.merge_from_file(args.config)
 
@@ -81,6 +79,8 @@ def main():
     total_lost = 0
 
     for v_idx, video in enumerate(dataset):
+        # if v_idx < 13:
+        #     continue
         print('video_name', video.name)
         # test one special video  series
         # print('video.attr[0]', video.attr[0])
@@ -176,7 +176,7 @@ def main():
             if args.vis and idx > 0:
                 if dataset_name in ['POT', 'UCSB', 'POIC']:
                     cv2.polylines(img, [np.array(gt_bbox).reshape(4,2).astype(np.int32)],
-                                  True, (0, 255, 255), 2)
+                                  True, (0, 255, 255), 2) # 黄色
                 else:
                     gt_box = list(map(int, gt_bbox))
                     pred_bbox = list(map(int, pred_bbox))
@@ -184,14 +184,14 @@ def main():
                                   (gt_box[0]+gt_box[2], gt_box[1]+gt_box[3]), (0, 255, 0), 2)
                 if isPolygon:
                     cv2.polylines(img, [polygon],
-                                  True, (0, 255, 0), 2)
-                    cv2.rectangle(img, (int(bbox_align[0]), int(bbox_align[1])), (int(bbox_align[0])+int(bbox_align[2]), int(bbox_align[1])+int(bbox_align[3])), (0, 0, 255), 2)
+                                  True, (0, 255, 0), 2) #绿色
+                    cv2.rectangle(img, (int(bbox_align[0]), int(bbox_align[1])), (int(bbox_align[0])+int(bbox_align[2]), int(bbox_align[1])+int(bbox_align[3])), (0, 0, 255), 2) #红色
                 else:
                     cv2.rectangle(img, (pred_bbox[0], pred_bbox[1]),
                                   (pred_bbox[0]+pred_bbox[2], pred_bbox[1]+pred_bbox[3]), (0, 255, 255), 2)
                 cv2.putText(img, str(idx), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-                plt.imshow(img)
-                plt.show()
+                # plt.imshow(img)
+                # plt.show()
                 cv2.imshow(video.name, img)
                 cv2.waitKey(1)
         toc /= cv2.getTickFrequency()
@@ -247,4 +247,5 @@ def main():
 
 
 if __name__ == '__main__':
+    context.set_context(mode=context.PYNATIVE_MODE, device_target='GPU', save_graphs=True)
     main()

@@ -3,13 +3,14 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import torch.nn as nn
+import mindspore.nn as nn
+from mindspore import ops
 import torch.nn.functional as F
 import imageio
 from hdn.core.config import cfg
 from homo_estimator.Deep_homography.Oneline_DLTv1.backbone import get_backbone
 from homo_estimator.Deep_homography.Oneline_DLTv1.preprocess import get_pre
-import torch
+import mindspore as ms
 from homo_estimator.Deep_homography.Oneline_DLTv1.utils import transform, DLT_solve
 import matplotlib.pyplot as plt
 
@@ -17,8 +18,8 @@ import matplotlib.pyplot as plt
 The model_builder we use right now.
 """
 
-criterion_l2 = nn.MSELoss(reduce=True, size_average=True)
-triplet_loss = nn.TripletMarginLoss(margin=1.0, p=1, reduce=False, size_average=False)#anchor p, n
+criterion_l2 = nn.MSELoss()
+# triplet_loss = nn.TripletMarginLoss(margin=1.0, p=1, reduce=False, size_average=False)#anchor p, n
 '''
    try to use huber loss to enhance the robustness
     >>> # Custom Distance Function
@@ -89,11 +90,11 @@ def normMask(mask, strenth=0.5):
     # print('max_value.shape',max_value.shape)
     max_value = max_value.reshape(batch_size, 1, 1, 1)
     mask = mask / (max_value * strenth)
-    mask = torch.clamp(mask, 0, 1)
+    mask = ops.clip_by_value(mask, 0, 1)
 
     return mask
 
-class HomoModelBuilder(nn.Module):
+class HomoModelBuilder(nn.Cell):
     def __init__(self, pretrained = False):
         super(HomoModelBuilder, self).__init__()
 
@@ -103,16 +104,16 @@ class HomoModelBuilder(nn.Module):
         print('pretrained:',pretrained)
         self.backbone = get_backbone(model_name,
                                      pretrained, **cfg.BACKBONE_HOMO.KWARGS)
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.avgpool = ops.AdaptiveAvgPool2D(1)
         print('self.avgpool',self.avgpool)
 
         if model_name == 'resnet18' or model_name == 'resnet34':
-            self.fc = nn.Linear(512, 8)
+            self.fc = nn.Dense(512, 8)
         elif model_name == 'resnet50':
-            self.fc = nn.Linear(2048, 8)
+            self.fc = nn.Dense(2048, 8)
 
 
-    def forward(self, data):
+    def construct(self, data):
         org_imgs = data['org_imgs']
         input_tensors = data['input_tensors']
         h4p = data['h4p']
@@ -122,20 +123,21 @@ class HomoModelBuilder(nn.Module):
         if 'search_windowx' in data: #acturally search_window
             sear_window = data['search_window'].squeeze(1) #[8,127,127]
         else:
-            sear_window = torch.ones([input_tensors.shape[0], 127,127]).to(_device)
+            sear_window = ops.ones([input_tensors.shape[0], 127,127])
         if 'if_pos' in data:
             if_pos = data['if_pos']
         else:
-            if_pos = torch.ones([input_tensors.shape[0],1, 127,127]).float().to(_device)
+            if_pos = ops.ones([input_tensors.shape[0],1, 127,127]).float()
         if 'if_unsup' in data:
             if_unsup = data['if_unsup']
         else:
-            if_unsup = torch.ones([input_tensors.shape[0],1, 127,127]).float().to(_device)
-        batch_size, _, img_h, img_w = org_imgs.size()
-        _, _, patch_size_h, patch_size_w = input_tensors.size()
-        y_t = torch.arange(0, batch_size * img_w * img_h,
+            if_unsup = ops.ones([input_tensors.shape[0],1, 127,127]).float()
+        batch_size, _, img_h, img_w = org_imgs.shape
+        _, _, patch_size_h, patch_size_w = input_tensors.shape
+        y_t = ms.numpy.arange(0, batch_size * img_w * img_h,
                            img_w * img_h)
-        batch_inds_tensor = y_t.unsqueeze(1).expand(y_t.shape[0], patch_size_h * patch_size_w).reshape(-1)
+        # batch_inds_tensor = y_t.unsqueeze(1).expand(y_t.shape[0], patch_size_h * patch_size_w).reshape(-1)
+        batch_inds_tensor = ops.reshape(ops.broadcast_to(ops.expand_dims(y_t, 1), (y_t.shape[0], patch_size_h * patch_size_w)), -1)
         w_h_scala = torch.tensor(63.5)
         M_tensor = torch.tensor([[w_h_scala, 0., w_h_scala],
                                  [0., w_h_scala, w_h_scala],
@@ -158,7 +160,7 @@ class HomoModelBuilder(nn.Module):
         patch_1_res = patch_1
         patch_2_res = patch_2
 
-        x = torch.cat((patch_1_res, patch_2_res), dim=1)
+        x = ops.concat((patch_1_res, patch_2_res), dim=1)
         x = self.backbone(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)

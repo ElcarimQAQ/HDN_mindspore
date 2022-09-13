@@ -14,7 +14,7 @@
 # ============================================================================
 """change torch pth to MindSpore ckpt example."""
 import argparse
-
+import mindspore as ms
 from mindspore import Parameter
 from mindspore import log as logger
 from mindspore import save_checkpoint
@@ -23,8 +23,10 @@ from mindspore.common.tensor import Tensor
 from hdn.models.model_builder_e2e_unconstrained_v2 import ModelBuilder
 from hdn.core.config import cfg
 import torch
-import mindspore as ms
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', default='experiments/tracker_homo_config/proj_e2e_GOT_unconstrained_v2.yaml', type=str,help='config file')
+args = parser.parse_args()
 
 def torch_to_ms(model, torch_model):
     """
@@ -36,7 +38,10 @@ def torch_to_ms(model, torch_model):
 
     print("Start loading.")
     # load torch parameter and MindSpore parameter
-    torch_param_dict = torch_model['state_dict']
+    try:
+        torch_param_dict = torch_model['state_dict']
+    except BaseException:
+        torch_param_dict = torch_model
     ms_param_dict = model.parameters_dict()
 
     for ms_key in ms_param_dict.keys():
@@ -57,7 +62,7 @@ def torch_to_ms(model, torch_model):
                 torch_key += "running_var"
             else:
                 torch_key = ms_key
-
+            # torch_key=torch_key.lstrip("backbone")[1:]
             update_torch_to_ms(torch_param_dict, ms_param_dict, torch_key, ms_key)
 
         else:
@@ -98,8 +103,8 @@ def torch_to_ms(model, torch_model):
                         update_torch_to_ms(torch_param_dict, ms_param_dict, torch_key, ms_key)
                     else:
                         update_bn(torch_param_dict, ms_param_dict, ms_key, ms_key_tmp)
-
     save_checkpoint(model, "hdn.ckpt")
+    # save_checkpoint(model, "pretrained_models/backbone_resnet50.ckpt")
     print("Finish load.")
 
 
@@ -195,9 +200,6 @@ def _special_process_par(par, new_par):
         return True
     return False
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--config', default='', type=str,help='config file')
-args = parser.parse_args()
 
 def pytorch2mindspore(torch_model):
     # 调用pytorch的load方法，读取pth文件
@@ -213,7 +215,7 @@ def pytorch2mindspore(torch_model):
         param_dict['data'] = Tensor(parameter.cpu().numpy())
         params_list.append(param_dict)
     # 调用save_checkpoint，把params_list 保存成ms格式的ckpt
-    save_checkpoint(params_list,  'model/ms.ckpt')
+    save_checkpoint(params_list,  'pretrained_models/backbone_resnet50.ckpt')
 
 if __name__ == '__main__':
     # load config
@@ -222,9 +224,10 @@ if __name__ == '__main__':
     # pytorch2mindspore(torchModel_dict)
 
     torch_model = torch.load('model/hdn-simi-sup-hm-unsup.pth')
+    # torch_model = torch.load('pretrained_models/resnet50.model')
     ms_model = ModelBuilder()
     torch_to_ms(ms_model, torch_model)
-    # param_dict = ms.load_checkpoint('hdn.ckpt')
+    param_dict = ms.load_checkpoint('hdn.ckpt')
 
-    # ms.load_param_into_net(ms_model,param_dict)
+    ms.load_param_into_net(ms_model,param_dict)
 

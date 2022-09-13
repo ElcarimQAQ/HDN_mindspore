@@ -5,18 +5,18 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
 from hdn.core.config import cfg
 from hdn.models.iou_loss import linear_iou
 from torch.autograd import Variable
+from mindspore import ops, Parameter,Tensor
 
 
 def get_cls_loss(pred, label, select):
-    if len(select.size()) == 0 or \
-            select.size() == torch.Size([0]):
+    if len(select.shape) == 0 or \
+            select.shape == torch.Size([0]):
         return 0
     pred = torch.index_select(pred, 0, select)
     label = torch.index_select(label, 0, select)
@@ -27,8 +27,8 @@ def get_cls_loss(pred, label, select):
 def select_cross_entropy_loss(pred, label):
     pred = pred.view(-1, 2)
     label = label.view(-1)
-    pos = label.data.eq(1).nonzero().squeeze().cuda()
-    neg = label.data.eq(0).nonzero().squeeze().cuda()
+    pos = ops.equal(label.data, 1).nonzero().squeeze().cuda()
+    neg = ops.equal(label.data, 0).nonzero().squeeze().cuda()
     loss_pos = get_cls_loss(pred, label, pos)
     loss_neg = get_cls_loss(pred, label, neg)
     return loss_pos * 0.5 + loss_neg * 0.5
@@ -44,30 +44,28 @@ def select_xr_focal_fuse_smooth_l1_loss_top_k(pred_cls, label_cls,delta_weight=0
     """
     batch_size = label_cls.shape[0]
     label_cls = label_cls.reshape(-1)
-    label_cls_new = label_cls.clone()
+    label_cls_new = label_cls.copy()
     pred_cls = pred_cls.view(-1,2)
-    neg = label_cls.data.eq(0).nonzero().squeeze().cuda()
-    pos = label_cls.data.gt(0).nonzero().squeeze().cuda()
-    cur_device = pred_cls.device
-    zero_loss = torch.tensor(0.0).to(cur_device)
+    neg = ops.equal(label_cls.T, 0).nonzero().squeeze()
+    pos = ops.gt(label_cls.T, 0).nonzero().squeeze()
+    # cur_device = pred_cls.device
+    zero_loss = Tensor(0.0)
 
-    if len(pos.size()) == 0 or \
-            pos.size() == torch.Size([0]):
+    if len(pos.shape) == 0 or pos.shape == (0):
         pos_loss = zero_loss
     else:
-        pred_cls_pos = torch.index_select(pred_cls, 0, pos)[:, 1]
-        absolute_loss_pos = torch.abs(label_cls_new[pos] - pred_cls_pos)
+        pred_cls_pos = pred_cls[pos][:,1]
+        absolute_loss_pos = ops.abs(label_cls_new[pos] - pred_cls_pos)
         reg_loss_pos = absolute_loss_pos# use l1 loss
         pos_loss = reg_loss_pos.sum()/ (reg_loss_pos.shape[0]+1)
 
-    if len(neg.size()) == 0 or \
-            neg.size() == torch.Size([0]):
+    if len(neg.shape) == 0 or neg.shape == (0):
         neg_loss = zero_loss  #problem here
     else:
-        pred_cls_neg = torch.index_select(pred_cls, 0, neg)[:, 1]
-        pred_cls_neg = pred_cls_neg.clamp(min=0.000001, max=0.9999999)
-        reg_loss_neg = - torch.log(1 - pred_cls_neg)
-        reg_loss_neg = torch.topk(reg_loss_neg, batch_size*100).values
+        pred_cls_neg = pred_cls[neg][:,1]
+        pred_cls_neg = ops.clip_by_value(pred_cls_neg, 0.000001, 0.9999999)
+        reg_loss_neg = - ops.log(1 - pred_cls_neg)
+        reg_loss_neg = ops.top_k(reg_loss_neg, batch_size*100).values
         neg_loss = reg_loss_neg.sum() / (reg_loss_neg.shape[0]+1)
     reg_loss = pos_loss + neg_loss
 
@@ -77,12 +75,12 @@ def select_xr_focal_fuse_smooth_l1_loss(pred_cls, label_cls,delta_weight=0.1):
     label_cls = label_cls.reshape(-1)
     label_cls_new = label_cls.clone()
     pred_cls = pred_cls.view(-1,2)
-    neg = label_cls.data.eq(0).nonzero().squeeze().cuda()
-    pos = label_cls.data.gt(0).nonzero().squeeze().cuda()
+    neg = ops.equal(label_cls.data, 0).nonzero().squeeze()
+    pos = ops.gt(label_cls.data, 0).nonzero().squeeze()
     pos_loss = 0
     neg_loss = 0
-    if len(pos.size()) == 0 or \
-            pos.size() == torch.Size([0]):
+    if len(pos.shape) == 0 or \
+            pos.shape == torch.Size([0]):
         reg_loss_pos = 0
         neg_loss = 0
     else:
@@ -93,15 +91,15 @@ def select_xr_focal_fuse_smooth_l1_loss(pred_cls, label_cls,delta_weight=0.1):
         reg_loss_pos = ( inds_pos * square_loss_pos + (1 - inds_pos) * (absolute_loss_pos - 0.5))
         pos_loss = reg_loss_pos.sum()/ (reg_loss_pos.shape[0]+1)
 
-    if len(neg.size()) == 0 or \
-            neg.size() == torch.Size([0]):
+    if len(neg.shape) == 0 or \
+            neg.shape == torch.Size([0]):
         reg_loss_neg = 0  #problem here
         pos_loss = 0
     else:
         pred_cls_neg = torch.index_select(pred_cls, 0, neg)[:, 1]
-        pred_cls_neg = pred_cls_neg.clamp(min=0.000001, max=0.9999999)
+        pred_cls_neg = ops.clip_by_value(pred_cls_neg, 0.000001, 0.9999999)
         absolute_loss_neg = torch.abs(label_cls_new[neg] - pred_cls_neg)
-        reg_loss_neg = -0.5*absolute_loss_neg * torch.log(1 - pred_cls_neg)
+        reg_loss_neg = -0.5*absolute_loss_neg * ops.log(1 - pred_cls_neg)
         neg_loss = reg_loss_neg.sum() / (reg_loss_neg.shape[0]+1)
     reg_loss = pos_loss + neg_loss
     return reg_loss
@@ -112,15 +110,15 @@ def select_xr_focal_fuse_smooth_l1_loss(pred_cls, label_cls,delta_weight=0.1):
     label_cls = label_cls.reshape(-1)
     label_cls_new = label_cls.clone()
     pred_cls = pred_cls.view(-1,2)
-    neg = label_cls.data.eq(0).nonzero().squeeze().cuda()
+    neg = ops.equal(label_cls.data, 0).nonzero().squeeze().cuda()
     pos = label_cls.data.gt(0).nonzero().squeeze().cuda()
     cur_device = pred_cls.device
     zero_loss = torch.tensor(0.0).to(cur_device)
 
     pos_loss = zero_loss
     neg_loss = zero_loss
-    if len(pos.size()) == 0 or \
-            pos.size() == torch.Size([0]):
+    if len(pos.shape) == 0 or \
+            pos.shape == torch.Size([0]):
         pos_loss = zero_loss
 
     else:
@@ -131,14 +129,14 @@ def select_xr_focal_fuse_smooth_l1_loss(pred_cls, label_cls,delta_weight=0.1):
         reg_loss_pos = ( inds_pos * square_loss_pos + (1 - inds_pos) * (absolute_loss_pos - 0.5))
         pos_loss = reg_loss_pos.sum()/ (reg_loss_pos.shape[0]+1)
 
-    if len(neg.size()) == 0 or \
-            neg.size() == torch.Size([0]):
+    if len(neg.shape) == 0 or \
+            neg.shape == torch.Size([0]):
         neg_loss = zero_loss  #problem here
     else:
         pred_cls_neg = torch.index_select(pred_cls, 0, neg)[:, 1]
-        pred_cls_neg = pred_cls_neg.clamp(min=0.000001, max=0.9999999)
+        pred_cls_neg = ops.clip_by_value(pred_cls_neg, 0.000001, 0.9999999)
         absolute_loss_neg = torch.abs(label_cls_new[neg] - pred_cls_neg)
-        reg_loss_neg = -0.5*absolute_loss_neg * torch.log(1 - pred_cls_neg)
+        reg_loss_neg = -0.5*absolute_loss_neg * ops.log(1 - pred_cls_neg)
         neg_loss = reg_loss_neg.sum() / (reg_loss_neg.shape[0]+1)
     reg_loss = pos_loss + neg_loss
     return reg_loss
@@ -162,8 +160,8 @@ def select_l1_loss_c(pred_loc, label_loc, label_cls):
     pos = label_cls.data.gt(max_c - 0.2).nonzero().squeeze().cuda()
     cur_device = pred_loc.device
     zero_loss = torch.tensor(0.0).to(cur_device)
-    if len(pos.size()) == 0 or \
-            pos.size() == torch.Size([0]):
+    if len(pos.shape) == 0 or \
+            pos.shape == torch.Size([0]):
         loss_pos = zero_loss
         return loss_pos
     pred_loc = pred_loc.permute(0, 2, 3, 1).reshape(-1, 2)
@@ -174,7 +172,7 @@ def select_l1_loss_c(pred_loc, label_loc, label_cls):
     square_loss = 0.5 * ((label_loc - pred_loc)) ** 2
     inds = absolute_loss.lt(1).float()
     reg_loss = (inds * square_loss + (1 - inds) * (absolute_loss - 0.5))
-    tsz = label_loc.size()[0] * label_loc.size()[1]+1
+    tsz = label_loc.shape[0] * label_loc.shape[1]+1
     reg_loss = reg_loss.sum()/tsz#weighted loss
     return reg_loss
 
@@ -193,13 +191,13 @@ def select_l1_loss_lp(pred_loc, label_loc, label_cls):
     reg_loss = (inds * square_loss + (1 - inds) * (absolute_loss - 0.5))
     reg_loss = (reg_loss[:,1]).sum()/(pos.sum()) #weighted loss
     reg_loss = (reg_loss.sum())/(pos.sum()) #weighted loss
-    tsz = label_loc.size()[0] * label_loc.size()[1]+1
+    tsz = label_loc.shape[0] * label_loc.shape[1]+1
     reg_loss = (reg_loss.sum())/tsz #weighted loss
     return reg_loss
 
 
 def kalyo_l1_loss(output, target, norm=False):
-    tsz = output.size()[0] * output.size()[1]+1
+    tsz = output.shape[0] * output.shape[1]+1
     # w, h
     absolute_loss = torch.abs(target - output)
     square_loss = 0.5 * (target - output) ** 2

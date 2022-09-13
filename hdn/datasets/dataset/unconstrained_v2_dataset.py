@@ -32,6 +32,7 @@ from hdn.datasets.dataset.dataset import SubDataset
 # setting opencv
 from memory_profiler import profile
 
+all_dataset = []
 pyv = sys.version[0]
 if pyv[0] == '3':
     cv2.ocl.setUseOpenCL(False)
@@ -59,7 +60,6 @@ class  BANDataset():
         self.point_target_lp = PointTargetLP()
         self.point_target_c = PointTargetRot()
         # create sub dataset
-        self.all_dataset = []
         start = 0
         # start = 0
         self.num = 0
@@ -78,7 +78,7 @@ class  BANDataset():
             start += sub_dataset.num
             self.num += sub_dataset.num_use
             sub_dataset.log()
-            self.all_dataset.append(sub_dataset)
+            all_dataset.append(sub_dataset)
 
         # data augmentation
         self.template_sup_aug = Augmentation(# rho, shift, scale, blur, flip, color, rotation
@@ -151,7 +151,7 @@ class  BANDataset():
         while m < self.num:
             p = []
             last_name = ""
-            for sub_dataset in self.all_dataset:
+            for sub_dataset in all_dataset:
                 sub_p = sub_dataset.pick
                 p += sub_p
             #fixme random
@@ -162,7 +162,7 @@ class  BANDataset():
         logger.info("dataset length {}".format(self.num))
         return pick[:self.num]
     def _find_dataset(self, index):
-        for dataset in self.all_dataset:
+        for dataset in all_dataset:
             if dataset.start_idx + dataset.num > index:
                 return dataset, index - dataset.start_idx
     def _get_bbox(self, image, shape):
@@ -221,7 +221,7 @@ class  BANDataset():
             img_add = None
             if cfg.DATASET.COMP > np.random.random():
                 if_comp = True
-                img_add = cv2.imread(np.random.choice(self.all_dataset).get_random_target()[0])
+                img_add = cv2.imread(np.random.choice(all_dataset).get_random_target()[0])
             if cfg.DATASET.LIGHT > np.random.random():
                 if_light = True
             if cfg.DATASET.DARK > np.random.random():
@@ -229,7 +229,7 @@ class  BANDataset():
             if neg:
 
                 template = dataset.get_random_target(index)# #(x_min, y_min, x_max, y_max)#[w, h, theta, center_x, center_y]
-                search = np.random.choice(self.all_dataset).get_random_target()
+                search = np.random.choice(all_dataset).get_random_target()
             else:
                 template, search = dataset.get_positive_pair(index)
             # get image
@@ -380,26 +380,5 @@ class  BANDataset():
                 template_lp = template_lp.transpose((2, 0, 1)).astype(np.float32)
                 template_hm = template_hm.transpose((2, 0, 1)).astype(np.float32)
                 search_hm = search_hm.transpose((2, 0, 1)).astype(np.float32)
-                return {
-                    'template': template,
-                    'template_lp': template_lp,
-                    'search': search,
-                    'template_poly': temp_poly,
-                    'search_poly': sear_poly,
-                    'label_cls': cls,
-                    'label_loc': delta,
-                    'label_cls_lp': cls_lp,
-                    'label_loc_lp': delta_lp,
-                    'scale_dist': sim.sx,
-                    'label_cls_c': cls_c,
-                    'label_loc_c': delta_c,
-                    'window_map': window_map,
-                    'template_hm':template_hm,
-                    'search_hm': search_hm,
-                    'template_window': mask_tmp,
-                    'search_window': mask_search,
-                    'if_pos': if_pos,
-                    'temp_cx': sim_tmp.x,
-                    'temp_cy': sim_tmp.y,
-                    'if_unsup': if_unsup
-                }
+                return template, template_lp, search, temp_poly, sear_poly, cls, delta, cls_lp, delta_lp, sim.sx, cls_c, delta_c, window_map, template_hm, search_hm, mask_tmp,\
+                       mask_search, if_pos, sim_tmp.x, sim_tmp.y, if_unsup

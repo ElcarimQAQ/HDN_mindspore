@@ -21,15 +21,15 @@ from hdn.models.model_builder_e2e_unconstrained_v2 import ModelBuilder
 
 
 parser = argparse.ArgumentParser(description='siamese tracking')
-parser.add_argument('--dataset', type=str,
+parser.add_argument('--dataset', type=str, default='POT280',
                     help='datasets')
-parser.add_argument('--config', default='', type=str,
+parser.add_argument('--config', default='proj_e2e_GOT_unconstrained_v2.yaml', type=str,
                     help='config file')
-parser.add_argument('--snapshot', default='', type=str,
+parser.add_argument('--snapshot', default='../../pretrained_models/hdn.ckpt', type=str,
                     help='snapshot of models to eval')
 parser.add_argument('--video', default='', type=str,
                     help='eval one special video')
-parser.add_argument('--vis', action='store_true',
+parser.add_argument('--vis', default=1, action='store_true',
                     help='whether visualzie result')
 parser.add_argument("--gpu_id", default="not_set", type=str,
                     help="gpu id")
@@ -184,8 +184,8 @@ def main():
                                   (gt_box[0]+gt_box[2], gt_box[1]+gt_box[3]), (0, 255, 0), 2)
                 if isPolygon:
                     cv2.polylines(img, [polygon],
-                                  True, (0, 255, 0), 2) #绿色
-                    cv2.rectangle(img, (int(bbox_align[0]), int(bbox_align[1])), (int(bbox_align[0])+int(bbox_align[2]), int(bbox_align[1])+int(bbox_align[3])), (0, 0, 255), 2) #红色
+                                  True, (0, 255, 0), 2) # 绿色
+                    cv2.rectangle(img, (int(bbox_align[0]), int(bbox_align[1])), (int(bbox_align[0])+int(bbox_align[2]), int(bbox_align[1])+int(bbox_align[3])), (0, 0, 255), 2) # 红色
                 else:
                     cv2.rectangle(img, (pred_bbox[0], pred_bbox[1]),
                                   (pred_bbox[0]+pred_bbox[2], pred_bbox[1]+pred_bbox[3]), (0, 255, 255), 2)
@@ -247,5 +247,5 @@ def main():
 
 
 if __name__ == '__main__':
-    context.set_context(mode=context.PYNATIVE_MODE, device_target='GPU', save_graphs=True)
+    context.set_context(mode=context.PYNATIVE_MODE, device_target='GPU', save_graphs=True, save_graphs_path="graph")
     main()

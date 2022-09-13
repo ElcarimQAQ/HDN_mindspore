@@ -31,7 +31,7 @@ def getPatchFromFullimg(patch_size_h, patch_size_w, patchIndices, batch_indices_
     warped_images_flat = img_full.reshape(-1)
     patch_indices_flat = patchIndices.reshape(-1)
     pixel_indices = patch_indices_flat.long() + batch_indices_tensor
-    mask_patch = torch.gather(warped_images_flat, 0, pixel_indices)
+    mask_patch = ops.gather_elements(warped_images_flat, 0, pixel_indices)
     mask_patch = mask_patch.reshape([num_batch, 1, patch_size_h, patch_size_w])
 
     return mask_patch
@@ -274,12 +274,12 @@ class ResNet(nn.Module):
 
         mask_ap = torch.mul(mask_I2, pred_Mask)
 
-        sum_value = torch.sum(mask_ap)
+        sum_value = ops.ReduceSum()(mask_ap)
         pred_I2_CnnFeature = self.ShareFeature(pred_I2)
         feature_loss_mat = triplet_loss(patch_2, pred_I2_CnnFeature, patch_1)
         batch_size = feature_loss_mat.shape[0]
-        feature_loss = torch.sum(torch.mul(feature_loss_mat, mask_ap)) / sum_value / batch_size
-        feature_loss = torch.unsqueeze(feature_loss, 0)
+        feature_loss = ops.ReduceSum()(torch.mul(feature_loss_mat, mask_ap)) / sum_value / batch_size
+        feature_loss = ops.expand_dims(feature_loss, 0)
 
         pred_I2_d = pred_I2[:1, ...]
         patch_2_res_d = patch_2_res[:1, ...]
@@ -361,11 +361,11 @@ class ResNet(nn.Module):
         # mask_ap = torch.ones_like(mask_ap)
         # ######
 
-        sum_value = torch.sum(mask_ap)
+        sum_value = ops.ReduceSum()(mask_ap)
         pred_I2_CnnFeature = self.ShareFeature(pred_I2)
         feature_loss_mat = triplet_loss(patch_2, pred_I2_CnnFeature, patch_1)
-        feature_loss = torch.sum(torch.mul(feature_loss_mat, mask_ap)) / sum_value
-        feature_loss = torch.unsqueeze(feature_loss, 0)
+        feature_loss = ops.ReduceSum()(torch.mul(feature_loss_mat, mask_ap)) / sum_value
+        feature_loss = ops.expand_dims(feature_loss, 0)
 
         pred_I2_d = pred_I2[:1, ...]
         patch_2_res_d = patch_2_res[:1, ...]

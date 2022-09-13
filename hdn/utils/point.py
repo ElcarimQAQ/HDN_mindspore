@@ -5,6 +5,7 @@ from __future__ import unicode_literals
 
 import numpy as np
 import torch
+from mindspore import ops, Tensor
 
 """
 cpu version
@@ -33,23 +34,23 @@ def generate_points_lp(stride_w, stride_h, size):
 gpu version 
 """
 def lp_pick(cls, loc, CLS_OUT_CHANNELS, STRIDE, STRIDE_LP, OUTPUT_SIZE_LP, MAP_SIZE):
-    sizes = cls.size()#[batch_size, 2, 13, 13]
+    sizes = cls.shape#[batch_size, 2, 13, 13]
     batch = sizes[0]
-    score = cls.view(batch, CLS_OUT_CHANNELS, -1).permute(0, 2, 1)#[batch_size,13*13,2]
-    best_idx = torch.argmax(score.softmax(2)[:, :, 1], 1)#batch_size
-    idx = best_idx.unsqueeze(1).unsqueeze(2)
-    delta = loc.view(batch, 4, -1).permute(0, 2, 1)#torch.Size([8, 4, 13, 13])-> torch.Size([8, 13*13, 4])
-    dummy = idx.expand(batch, 1, delta.size(2)) ##torch.Size([batch_size, 1, 4])
+    score = ops.transpose(cls.view(batch, CLS_OUT_CHANNELS, -1), (0, 2, 1))#[batch_size,13*13,2]
+    best_idx = ops.Argmax(1)(ops.Softmax(2)(score)[:, :, 1])#batch_size
+    idx = ops.expand_dims(ops.expand_dims(best_idx, 1), 2)
+    delta = ops.transpose(loc.view(batch, 4, -1), (0, 2, 1))#torch.Size([8, 4, 13, 13])-> torch.Size([8, 13*13, 4])
+    dummy = ops.broadcast_to(idx, (batch, 1, delta.shape[2])) ##torch.Size([batch_size, 1, 4])
     points = generate_points(STRIDE, OUTPUT_SIZE_LP)
-    point = torch.from_numpy(points).cuda()
-    point = point.expand(batch, point.size(0), point.size(1))#torch.Size([batch_size, 625, 2])
-    delta = torch.gather(delta, 1, dummy).squeeze(1)
-    point = torch.gather(point, 1, dummy[:, :, 0:2]).squeeze(1)
+    point = Tensor.from_numpy(points)
+    point = ops.broadcast_to(point, (batch, point.shape[0], point.shape[1]))#torch.Size([batch_size, 625, 2])
+    delta = ops.gather_elements(delta, 1, dummy).squeeze(1)
+    point = ops.gather_elements(point, 1, dummy[:, :, 0:2]).squeeze(1)
     scale = point[:, 0] - delta[:, 0] * STRIDE_LP
     rot = point[:, 1] - delta[:, 2] * STRIDE_LP
     rot = rot * (2 * np.pi / MAP_SIZE)
     mag = np.log(MAP_SIZE / 2) / MAP_SIZE
-    scale = torch.exp(scale * mag)
+    scale = ops.exp(scale * mag)
     return scale, rot
 
 

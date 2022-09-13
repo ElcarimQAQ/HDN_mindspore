@@ -12,7 +12,7 @@ import mindspore as ms
 
 model_urls = {
     'resnet18': "mindspore/1.8/resnet18_imagenet2012",
-    'resnet34': "mindspore/1.8/resnet34_imagenet2012",
+    'resnet34': "/home/lbyang/workspace/HDN_mindspore/pretrained_models/resnet34.ckpt", # "mindspore/1.8/resnet34_imagenet2012"
     'resnet50': "mindspore/1.8/resnet50_imagenet2012",
     'resnet101': "mindspore/1.8/resnet101_imagenet2012",
     'resnet152': "mindspore/1.8/resnet152_imagenet2012",
@@ -38,7 +38,7 @@ def get_backbone(model_name, pretrained=False, **kwargs):
     if pretrained == True:
         print('load_pretrained from',model_urls[model_name])
         exclude_dict = ['conv1.weight','fc.weight','fc.bias']
-        pretrained_dict = ms.load_checkpoint("/home/lbyang/workspace/HDN_mindspore/model/resnet34_ascend_v180_imagenet2012_official_cv_top1acc73.61_top5acc91.74.ckpt")
+        pretrained_dict = ms.load_checkpoint(model_urls[model_name])
         model_dict = model.parameters_dict()
 
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k not in exclude_dict}

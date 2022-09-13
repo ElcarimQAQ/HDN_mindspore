@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 import torch
+from mindspore import ops
 def img_padding(img, sx, sy):
     """
     add padding to an image [w,h] => [w+sx*2, h+sy*2]
@@ -420,8 +421,8 @@ def combine_affine_c0(nm_shift, scale, rot, scale_h, in_sz, out_sz):
     [ sin(c),  cos(c), b - b*cos(c) - a*sin(c)] = [ 0, 1, b][ sc*sin(c),  sc*cos(c), 0][ 0, 1, -b]
     [      0,       0,                       1]   [ 0, 0, 1][      0,       0, 1][ 0, 0,  1]
     """
-    cc = torch.cos(rot)
-    ss = torch.sin(rot)
+    cc = ops.cos(rot)
+    ss = ops.sin(rot)
     sc = out_sz / in_sz * scale
     a = sc*cc
     b = -sc*ss
@@ -449,8 +450,8 @@ def combine_affine_c0_v2(cx, cy, nm_shift, scale, rot, scale_h, in_sz, out_sz):
     [ sc*sin(c),  sc*cos(c), -q(cx)-l(cy)+sy] <= [ 0, 1, sy][ q, l, 0][ 0, 1, -cy] <= [ 0, 1, sy][ sc*sin(c),  sc*cos(c), 0][ 0, 1, -cy]
     [      0,       0,                 1]        [ 0, 0, 1][ 0, 0, 1][ 0, 0,    1]    [ 0, 0, 1 ][      0,       0,       1][ 0, 0,  1 ]
     """
-    cc = torch.cos(rot)
-    ss = torch.sin(rot)
+    cc = ops.cos(rot)
+    ss = ops.sin(rot)
     sc = out_sz / in_sz * scale
     a = sc*cc
     b = -sc*ss
@@ -470,13 +471,11 @@ def combine_affine_c0_v2(cx, cy, nm_shift, scale, rot, scale_h, in_sz, out_sz):
     #         .permute(1, 0).reshape([-1, 2, 3]).floatl()  # [6,batch_size] -> [batch_size, 6] -> [batch_size, 2, 3]
 
     if scale_h:
-        affine_matrix = torch.stack([a, b, (-a*(cx_s)-b*(cy_s)+sx)/out_sz, \
-                                     c, d, (-c*(cx_s)-d*(cy_s)+sy)/out_sz]) \
-            .permute(1, 0).reshape([-1, 2, 3]).float()  # [6,batch_size] -> [batch_size, 6] -> [batch_size, 2, 3]
+        affine_matrix = ops.transpose(ops.stack((a, b, (-a*(cx_s)-b*(cy_s)+sx)/out_sz, c, d, (-c*(cx_s)-d*(cy_s)+sy)/out_sz)) \
+            ,(1, 0)).reshape((-1, 2, 3)) # [6,batch_size] -> [batch_size, 6] -> [batch_size, 2, 3]
     else:
-        affine_matrix = torch.stack([a, b, (-a*(cx_s)-b*(cy_s)+sx), \
-                                     c, d, (-c*(cx_s)-d*(cy_s)+sy)]) \
-            .permute(1, 0).reshape([-1, 2, 3]).float()  # [6,batch_size] -> [batch_size, 6] -> [batch_size, 2, 3]
+        affine_matrix = ops.stack((a, b, (-a*(cx_s)-b*(cy_s)+sx), c, d, (-c*(cx_s)-d*(cy_s)+sy))) \
+            .transpose(1, 0).reshape((-1, 2, 3))# [6,batch_size] -> [batch_size, 6] -> [batch_size, 2, 3]
 
     return affine_matrix
 
@@ -503,8 +502,8 @@ def combine_affine_lt0(cx, cy, nm_shift, scale, rot, in_sz, o_sz):
     [      0,       0,                       1]        [ 0, 0, 1 ][ 0, 0, 1][ 0, 0,  1  ]    [ 0, 0, 1 ][      0,       0,        1][ 0, 0,      1]
     """
     #need to compute first shift then rot finally shift_back
-    cc = torch.cos(rot)
-    ss = torch.sin(rot)
+    cc = ops.cos(rot)
+    ss = ops.sin(rot)
     sc = scale
     o = sc*cc
     p = -sc*ss
@@ -517,7 +516,7 @@ def combine_affine_lt0(cx, cy, nm_shift, scale, rot, in_sz, o_sz):
     sx = nm_shift[:, 0] + in_sz/2
     sy = nm_shift[:, 1] + in_sz/2
 
-    affine_matrix = torch.stack([o, p, -o*(sx)-p*(sy)+cx, \
-                                 q, l, -q*(sx)-l*(sy)+cy]) \
-        .permute(1, 0).reshape([-1, 2, 3]).float()  # [6,batch_size] -> [batch_size, 6] -> [batch_size, 2, 3]
+    affine_matrix = ops.stack((o, p, -o*(sx)-p*(sy)+cx, \
+                                 q, l, -q*(sx)-l*(sy)+cy)) \
+        .transpose(1, 0).reshape((-1, 2, 3))  # [6,batch_size] -> [batch_size, 6] -> [batch_size, 2, 3]
     return affine_matrix

@@ -9,7 +9,7 @@ parser.add_argument('--dataset', default='POT210', type=str, help='POT210 or POT
 args = parser.parse_args()
 
 if __name__ == "__main__":
-    anno_path = cfg.BASE.DATA_PATH + "POT_annotation-280" #"/home/username/data/POT_annotation"
+    anno_path = cfg.BASE.DATA_PATH + "POT_v/annotation" #"/home/username/data/POT_annotation"
     if args.dataset == 'POT210':
         max_v = 30
     else:

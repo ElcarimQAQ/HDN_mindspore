@@ -13,7 +13,7 @@ BACKBONE:
   TYPE: "resnet50"
   KWARGS:
     used_layers: [2, 3, 4]
-  PRETRAINED: 'pretrained_models/resnet50.ckpt'
+  PRETRAINED: 'pretrained_models/backbone_resnet50.ckpt'
   TRAIN_LAYERS: ['layer2', 'layer3', 'layer4']
   TRAIN_EPOCH: 40
   LAYERS_LR: 0.1

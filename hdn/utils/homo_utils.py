@@ -136,8 +136,8 @@ def transformer(U, theta, out_size, **kwargs):
         x1 = ops.clip_by_value(x1, zero, max_x)
         y0 = ops.clip_by_value(y0, zero, max_y)
         y1 = ops.clip_by_value(y1, zero, max_y)
-        dim2 = torch.from_numpy(np.array(width))
-        dim1 = torch.from_numpy(np.array(width * height))
+        dim2 = Tensor.from_numpy(np.array(width))
+        dim1 = Tensor.from_numpy(np.array(width * height))
 
         base = _repeat(numpy.arange(0, num_batch) * dim1, out_height * out_width)
         if torch.cuda.is_available():
@@ -161,29 +161,29 @@ def transformer(U, theta, out_size, **kwargs):
 
         idx_a = idx_a.unsqueeze(-1).long()
         idx_a = idx_a.expand(height * width * num_batch, num_channels)
-        Ia = torch.gather(im_flat, 0, idx_a)
+        Ia = ops.gather_elements(im_flat, 0, idx_a)
 
         idx_b = idx_b.unsqueeze(-1).long()
         idx_b = idx_b.expand(height * width * num_batch, num_channels)
-        Ib = torch.gather(im_flat, 0, idx_b)
+        Ib = ops.gather_elements(im_flat, 0, idx_b)
 
         idx_c = idx_c.unsqueeze(-1).long()
         idx_c = idx_c.expand(height * width * num_batch, num_channels)
-        Ic = torch.gather(im_flat, 0, idx_c)
+        Ic = ops.gather_elements(im_flat, 0, idx_c)
 
         idx_d = idx_d.unsqueeze(-1).long()
         idx_d = idx_d.expand(height * width * num_batch, num_channels)
-        Id = torch.gather(im_flat, 0, idx_d)
+        Id = ops.gather_elements(im_flat, 0, idx_d)
 
         x0_f = x0.float()
         x1_f = x1.float()
         y0_f = y0.float()
         y1_f = y1.float()
 
-        wa = torch.unsqueeze(((x1_f - x) * (y1_f - y)), 1)
-        wb = torch.unsqueeze(((x1_f - x) * (y - y0_f)), 1)
-        wc = torch.unsqueeze(((x - x0_f) * (y1_f - y)), 1)
-        wd = torch.unsqueeze(((x - x0_f) * (y - y0_f)), 1)
+        wa = ops.expand_dims(((x1_f - x) * (y1_f - y)), 1)
+        wb = ops.expand_dims(((x1_f - x) * (y - y0_f)), 1)
+        wc = ops.expand_dims(((x - x0_f) * (y1_f - y)), 1)
+        wd = ops.expand_dims(((x - x0_f) * (y - y0_f)), 1)
         output = wa * Ia + wb * Ib + wc * Ic + wd * Id
 
         return output
@@ -192,13 +192,13 @@ def transformer(U, theta, out_size, **kwargs):
 
         if scale_h:
             x_t = ops.matmul(torch.ones([height, 1]),
-                               ops.transpose(torch.unsqueeze(torch.linspace(-1.0, 1.0, width), 1), (1, 0)))
-            y_t = ops.matmul(torch.unsqueeze(torch.linspace(-1.0, 1.0, height), 1),
+                               ops.transpose(ops.expand_dims(torch.linspace(-1.0, 1.0, width), 1), (1, 0)))
+            y_t = ops.matmul(ops.expand_dims(torch.linspace(-1.0, 1.0, height), 1),
                                torch.ones([1, width]))
         else:
             x_t = ops.matmul(torch.ones([height, 1]),
-                               ops.transpose(torch.unsqueeze(torch.linspace(0.0, width.float(), width), 1), (1, 0)))
-            y_t = ops.matmul(torch.unsqueeze(torch.linspace(0.0, height.float(), height), 1),
+                               ops.transpose(ops.expand_dims(torch.linspace(0.0, width.float(), width), 1), (1, 0)))
+            y_t = ops.matmul(ops.expand_dims(torch.linspace(0.0, height.float(), height), 1),
                                torch.ones([1, width]))
 
         x_t_flat = x_t.reshape((1, -1)).float()
@@ -234,7 +234,7 @@ def transformer(U, theta, out_size, **kwargs):
         smallers = 1e-6 * (1.0 - ops.ge(torch.abs(t_s_flat), small).float())
 
         t_s_flat = t_s_flat + smallers
-        condition = torch.sum(ops.gt(torch.abs(t_s_flat), small).float())
+        condition = ops.ReduceSum()(ops.gt(torch.abs(t_s_flat), small).float())
         # Ty changed
         x_s_flat = x_s.reshape([-1]) / t_s_flat
         y_s_flat = y_s.reshape([-1]) / t_s_flat
@@ -267,7 +267,7 @@ def transform(patch_size_h, patch_size_w, M_tile_inv, H_mat, M_tile, I1, patch_i
     pixel_indices = patch_indices_flat.long() + batch_indices_tensor
     pixel_indices = pixel_indices.unsqueeze(-1).long()
     pixel_indices = pixel_indices.expand(patch_size_h * patch_size_w * batch_size, num_channels)
-    pred_I2_flat = torch.gather(warped_images_flat, 0, pixel_indices)
+    pred_I2_flat = ops.gather_elements(warped_images_flat, 0, pixel_indices)
 
     pred_I2 = pred_I2_flat.reshape([batch_size, patch_size_h, patch_size_w, num_channels])
 

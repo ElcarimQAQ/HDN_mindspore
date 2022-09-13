@@ -49,12 +49,12 @@ def remove_prefix(state_dict, prefix):
 def load_pretrain(model, pretrained_path):
     logger.info('load pretrained model from {}'.format(pretrained_path))
     pretrained_dict = ms.load_checkpoint(pretrained_path)
-    if "resnet50" in pretrained_path: # backbone 加载缺少字段
-        pretrained_dict_new = {}
-        for key in pretrained_dict:
-            if "backbone" not in key:
-                pretrained_dict_new.update({"backbone." + key : pretrained_dict.get(key)})
-        pretrained_dict = pretrained_dict_new
+    # if "resnet50" in pretrained_path: # backbone 加载缺少字段
+    #     pretrained_dict_new = {}
+    #     for key in pretrained_dict:
+    #         if "backbone" not in key:
+    #             pretrained_dict_new.update({"backbone." + key : pretrained_dict.get(key)})
+    #     pretrained_dict = pretrained_dict_new
 
     if "state_dict" in pretrained_dict.keys():
         pretrained_dict = remove_prefix(pretrained_dict['state_dict'],

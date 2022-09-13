@@ -13,4 +13,4 @@ class Normalize(object):
 class ToTensor(object):
     def __call__(self, sample):
         sample = sample.transpose(2, 0, 1)
-        return torch.from_numpy(sample.astype(np.float32))
+        return Tensor.from_numpy(sample.astype(np.float32))

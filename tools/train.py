@@ -15,8 +15,7 @@ import random
 import numpy as np
 
 import mindspore as ms
-import mindspore.nn as nn
-from mindspore import context
+from mindspore import context, set_seed, nn, Tensor
 from torch.utils.data import DataLoader
 import mindspore.dataset as ds
 from torch.utils.tensorboard import SummaryWriter
@@ -56,14 +55,11 @@ args = parser.parse_args()
 
 
 
-def seed_torch(seed=0):
+def seed(seed=0):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+    set_seed(seed)
+    np.random.seed(123456)
 
 def make_mesh(patch_w,patch_h):
     x_flat = np.arange(0,patch_w)
@@ -190,7 +186,7 @@ def build_opt_lr(model, current_epoch=0):
                               'lr': cfg.TRAIN.HOMO_START_LR * cfg.TRAIN.HOMO_LR_RATIO}]
 
     optimizer = nn.Adam(params=trainable_params, learning_rate=cfg.TRAIN.BASE_LR, use_amsgrad=True, weight_decay=1e-4)  # default as 0.0001
-    lr_scheduler = nn.ExponentialDecayLR(cfg.TRAIN.BASE_LR, decay_rate=0.8, decay_steps=cfg.TRAIN.EPOCH)
+    lr_scheduler = nn.ExponentialDecayLR(cfg.TRAIN.BASE_LR, decay_rate=0.8, decay_steps= 3125)
     result = lr_scheduler(cfg.TRAIN.START_EPOCH)
     return optimizer, lr_scheduler
 
@@ -267,7 +263,7 @@ def train(train_dataset, model, optimizer, lr_scheduler, tb_writer):
             ms.save_checkpoint(
                 {'epoch': epoch,
                  'state_dict': model.parameters_dict(),
-                 'optimizer': optimizer.state_dict()}, # 估计有问题
+                 'optimizer': optimizer.parameters_dict()}, # 估计有问题
                 cfg.TRAIN.SNAPSHOT_DIR + '/got_e2e_%s_e%d.pth' % (cfg.TRAIN.OBJ, epoch))
 
             if epoch == cfg.TRAIN.EPOCH:
@@ -292,7 +288,6 @@ def train(train_dataset, model, optimizer, lr_scheduler, tb_writer):
         #     tb_writer.add_scalar('time/data', data_time, tb_idx)
 
         # with torch.autograd.detect_anomaly():
-        optimizer.zero_grad()
 
 
         outputs = model(data)
@@ -336,9 +331,14 @@ def train(train_dataset, model, optimizer, lr_scheduler, tb_writer):
         end = time.time()
 
 def train(train_dataset, model, optimizer, lr_scheduler):
+    average_meter = AverageMeter()
+
+    def is_valid_number(x):
+        return not (math.isnan(x) or math.isinf(x) or x > 1e4)
+
     world_size = 1
-    # train_dataset.children[0].source_len
-    num_per_epoch = train_dataset.get_dataset_size() // cfg.TRAIN.EPOCH // (cfg.TRAIN.BATCH_SIZE * world_size)
+    # train_dataset.get_dataset_size()
+    num_per_epoch = train_dataset.children[0].source_len // cfg.TRAIN.EPOCH // (cfg.TRAIN.BATCH_SIZE * world_size)
 
     start_epoch = cfg.TRAIN.START_EPOCH
     epoch = start_epoch
@@ -349,7 +349,13 @@ def train(train_dataset, model, optimizer, lr_scheduler):
     end = time.time()
     print('num_per_epoch', num_per_epoch)
 
-    for d in train_dataset.create_dict_iterator():
+    idx = 0
+    for data in train_dataset.create_dict_iterator():
+        with open('/data/HDN_var/trainDictData.json') as fp:
+            data = json.load(fp)
+        for key in data:
+            data[key] = Tensor(data[key])
+
         if epoch != idx // num_per_epoch + start_epoch:  # 更新epoch
             epoch = idx // num_per_epoch + start_epoch
 
@@ -381,7 +387,6 @@ def train(train_dataset, model, optimizer, lr_scheduler):
         #     tb_writer.add_scalar('time/data', data_time, tb_idx)
 
         # with torch.autograd.detect_anomaly():
-        optimizer.zero_grad()
 
         outputs = model(data)
 
@@ -393,15 +398,16 @@ def train(train_dataset, model, optimizer, lr_scheduler):
             optimizer.step()
         batch_time = time.time() - end
         batch_info = {}
-        batch_info['batch_time'] = average_reduce(batch_time)
-        batch_info['data_time'] = average_reduce(data_time)
+        # batch_info['batch_time'] = average_reduce(batch_time)
+        # batch_info['data_time'] = average_reduce(data_time)
 
-        for k, v in sorted(outputs.items()):
-            # pass
-            batch_info[k] = average_reduce(v.data.item())
+        # for k, v in sorted(outputs.items()):
+        #     # pass
+        #     batch_info[k] = average_reduce(v.data.item())
         average_meter.update(**batch_info)
 
         end = time.time()
+        idx = idx + 1
 
 
 
@@ -450,18 +456,18 @@ def main():
     # #build optimizer and lr_scheduler
     optimizer, lr_scheduler = build_opt_lr(model,
                                            cfg.TRAIN.START_EPOCH)
-    # # resume training
-    # RESUME_PATH = cfg.BASE.PROJ_PATH + cfg.TRAIN.RESUME
-    # if cfg.TRAIN.RESUME:
-    #     logger.info("resume from {}".format(RESUME_PATH))
-    #     assert os.path.isfile(RESUME_PATH), \
-    #         '{} is not a valid file.'.format(RESUME_PATH)
-    #     model, optimizer, cfg.TRAIN.START_EPOCH = \
-    #         restore_from(model, optimizer, RESUME_PATH)
-    # # # load pretrain
-    # elif cfg.TRAIN.PRETRAINED:
-    #     print('if cfg.TRAIN.PRETRAINED')
-    #     load_pretrain(model, cfg.TRAIN.PRETRAINED)
+    # resume training
+    RESUME_PATH = cfg.BASE.PROJ_PATH + cfg.TRAIN.RESUME
+    if cfg.TRAIN.RESUME:
+        logger.info("resume from {}".format(RESUME_PATH))
+        assert os.path.isfile(RESUME_PATH), \
+            '{} is not a valid file.'.format(RESUME_PATH)
+        model, optimizer, cfg.TRAIN.START_EPOCH = \
+            restore_from(model, optimizer, RESUME_PATH)
+    # load pretrain
+    elif cfg.TRAIN.PRETRAINED:
+        print('if cfg.TRAIN.PRETRAINED')
+        load_pretrain(model, cfg.TRAIN.PRETRAINED)
     #
     #
     # dist_model = DistModule(model)
@@ -469,17 +475,17 @@ def main():
     # logger.info("model prepare done")
     # cfg.TRAIN.START_EPOCH = start_epoch
     #
-    # # start training
-    model = ms.Model(model)
-    model.train(epoch=5, train_dataset=train_dataset)
+    # start training
+    net = nn.TrainOneStepCell(model, optimizer)
+    net.set_train()
+    # model.train(epoch=5, train_dataset=train_dataset)
     train(train_dataset, model, optimizer, lr_scheduler)
 
 
 if __name__ == '__main__':
-    # seed_torch(args.seed)
+    seed(args.seed)
     # import heartrate
     # from heartrate import trace, files
     # heartrate.trace(browser=True,host='10.214.241.12', port=4235, files=files.path_contains('model_builder_e2e_unconstrained', 'train_e2e_unconstrained_dist','unconstrained_dataset'))
-    # seed_torch(args.seed)
     context.set_context(mode=context.PYNATIVE_MODE, device_target='GPU')
     main()

@@ -10,9 +10,7 @@ from __future__ import unicode_literals
 
 import torch
 import mindspore as ms
-from mindspore import ops
-import mindspore.nn as nn
-import torch.nn.functional as F
+from mindspore import ops, nn, Tensor
 import numpy as np
 from hdn.core.config import cfg
 from hdn.models.loss import select_cross_entropy_loss, \
@@ -32,10 +30,12 @@ from hdn.utils.point import generate_points, generate_points_lp, lp_pick, get_ce
 from homo_estimator.Deep_homography.Oneline_DLTv1.utils import DLT_solve
 from homo_estimator.Deep_homography.Oneline_DLTv1.utils import transform as Homo_STN
 from mindspore.scipy.linalg import inv
+from mindspore.common.initializer import One
+from hdn.models.triplet_loss import TripletMarginLoss
 from torchvision import transforms, utils
 
 criterion_l2 = nn.MSELoss()
-# triplet_loss = nn.TripletMarginLoss(margin=1.0, p=1, reduce=False, size_average=False) #TODO:没有
+triplet_loss = TripletMarginLoss(margin=1.0, p=1)
 class ModelBuilder(nn.Cell):
     # @profile
     def __init__(self):
@@ -71,14 +71,14 @@ class ModelBuilder(nn.Cell):
         self.hm_net = HomoModelBuilder(pretrained=True) #TODO
 
     def _convert_score(self, score):
-        score = score.contiguous().view(score.shape[0], self.cls_out_channels, -1).permute(0, 2, 1)  # [28, 625, 2] or [28, 169, 2]
+        score = score.view(score.shape[0], self.cls_out_channels, -1).transpose(0, 2, 1)  # [28, 625, 2] or [28, 169, 2]
         score = score[:,:,1]
         return score
 
     def _convert_c(self, delta, point):
 
-        delta = delta.contiguous().view(delta.shape[0], 2, -1) #(28, 2, 625)
-        point = torch.from_numpy(point) #(625, 2)
+        delta = delta.view(delta.shape[0], 2, -1) #(28, 2, 625)
+        point = Tensor.from_numpy(point) #(625, 2)
         delta[:, 0, :] = point[:, 0] - delta[:, 0, :]*8
         delta[:, 1, :] = point[:, 1] - delta[:, 1, :]*8
         return delta
@@ -87,7 +87,7 @@ class ModelBuilder(nn.Cell):
     def feature_extractor(self, x):
         xf = self.backbone(x)
         # plt.imshow(xf[-1].asnumpy()[0, 3, :, :])
-        # plt.show()
+        # plt.show()_convert_logpolar_simi
         return xf #+ xf_lp
 
     #TODO
@@ -105,7 +105,7 @@ class ModelBuilder(nn.Cell):
 
     def update_template(self, z, rot):
         zf = self.feature_extractor(z)
-        polar = ops.expand_dims(torch.zeros(2), 0) #assuming the target has been moved to the center in the img.
+        polar = ops.expand_dims(ops.Zeros()((2), ms.float32 ), 0) #assuming the target has been moved to the center in the img.
         z_lp,_ = self.logpolar_instance(z, polar, rot)
         zf_lp = self.feature_extractor(z_lp)
         if cfg.ADJUST.ADJUST:
@@ -223,21 +223,23 @@ class ModelBuilder(nn.Cell):
 
     def log_softmax(self, cls):
         if cfg.BAN.BAN:
-            cls = cls.permute(0, 2, 3, 1).contiguous()
-            cls = F.log_softmax(cls, dim=3)
+            cls = cls.transpose(0, 2, 3, 1)
+            cls = ops.log_softmax(cls,3)
         return cls
 
     def softmax(self, cls):
         if cfg.BAN.BAN:
             #cls [28, 2, 25, 25]
-            cls = cls.permute(0, 2, 3, 1).contiguous()
-            cls = F.softmax(cls, dim=3)
+            cls = cls.transpose(0, 2, 3, 1)
+            cls = ops.Softmax(axis=3)(cls)
         return cls
 
-    def stn_with_theta(self, x, theta, size):
+    # Todo：affine_grid 算子缺失，先凑合一下跑通
+    def stn_with_theta(self, x, theta, size, polar):
         theta = theta.view(-1, 2, 3)
-        grid = F.affine_grid(theta, size)
-        x = F.grid_sample(x, grid)
+        # grid = self.logpolar_instance.get_logpolar_grid(polar, x.shape)  # [1 127 127 2]
+        grid = ops.affine_grid(theta, size)
+        x = ops.grid_sample(x, grid)
         return x
 
     def make_mesh(self, patch_w, patch_h):
@@ -259,7 +261,7 @@ class ModelBuilder(nn.Cell):
         warped_images_flat = img_full.reshape(-1)
         patch_indices_flat = patchIndices.reshape(-1)
         pixel_indices = patch_indices_flat.long() + batch_indices_tensor
-        mask_patch = torch.gather(warped_images_flat, 0, pixel_indices)
+        mask_patch = ops.gather_elements(warped_images_flat, 0, pixel_indices)
         mask_patch = mask_patch.reshape([num_batch, 1, patch_size_h, patch_size_w])
         return mask_patch
 
@@ -280,23 +282,23 @@ class ModelBuilder(nn.Cell):
         _patch_w, _patch_h = 127, 127
         _rho = 0
         _x_mesh, _y_mesh = self.make_mesh(_patch_w, _patch_h)
-        template_mean = torch.mean(warped_template, 1, keepdim=True)
-        search_mean = torch.mean(warped_search, 1, keepdim=True)
-        org_imges = ops.concat([template_mean, search_mean], dim=1).float()
+        template_mean = ops.ReduceMean(True)(warped_template, 1)
+        search_mean = ops.ReduceMean(True)(warped_search, 1)
+        org_imges = ops.concat((template_mean, search_mean), 1)
         # input_tesnors = org_imges.clone()
         h, w = org_imges.shape[2], org_imges.shape[3]
         batch_size = org_imges.shape[0]
         x, y = 0, 0
         y_t_flat = np.reshape(_y_mesh, [-1])
         x_t_flat = np.reshape(_x_mesh, [-1])
-        patch_indices = ops.expand_dims(torch.from_numpy((y_t_flat + y) * w + (x_t_flat + x)), 0).repeat(batch_size, 1)
+        patch_indices = ms.numpy.tile(ops.expand_dims(Tensor.from_numpy((y_t_flat + y) * w + (x_t_flat + x)), 0), (batch_size, 1))
         top_left_point = (x, y)
         bottom_left_point = (x, y + _patch_h)
         bottom_right_point = (_patch_w + x, _patch_h + y)
         top_right_point = (x + _patch_w, y)
         four_points = [top_left_point, bottom_left_point, bottom_right_point, top_right_point]
         four_points = np.reshape(four_points, (-1))
-        h4p = ops.expand_dims(torch.from_numpy(four_points), 0).repeat(batch_size, 1).float()
+        h4p = ops.Cast()(ms.numpy.tile(ops.expand_dims(Tensor.from_numpy(four_points), 0), (batch_size, 1)), ms.float32)
         input_tensors = org_imges[:, :, y: y + _patch_h, x: x + _patch_w]
         I = org_imges[:, 0, ...]
         I = I[:, np.newaxis, ...]
@@ -307,11 +309,6 @@ class ModelBuilder(nn.Cell):
         I2 = input_tensors[:, 1, ...]
         I2 = I2[:, np.newaxis, ...]
 
-        if torch.cuda.is_available():
-            input_tensors = input_tensors
-            patch_indices = patch_indices
-            h4p = h4p
-            org_imges = org_imges
         data = {}
         data['org_imgs'] = org_imges
         data['input_tensors'] = input_tensors
@@ -329,9 +326,9 @@ class ModelBuilder(nn.Cell):
         _patch_w, _patch_h = 127, 127
         _rho = 0
         _x_mesh, _y_mesh = self.make_mesh(_patch_w, _patch_h)
-        template_mean = torch.mean(template, 1, keepdim=True)
-        search_mean = torch.mean(search, 1, keepdim=True)
-        warped_search_mean = torch.mean(warped_search, 1, keepdim=True)
+        template_mean = ops.ReduceMean(True)(template, 1)
+        search_mean = ops.ReduceMean(True)(search, 1)
+        warped_search_mean = ops.ReduceMean(True)(warped_search, 1)
         return template_mean, search_mean, warped_search_mean
 
     def construct(self, data):
@@ -349,18 +346,17 @@ class ModelBuilder(nn.Cell):
         search_poly = data['search_poly']
         search_hm = data['search_hm']
         template_hm = data['template_hm']
-        template_window = data['template_window'].float()
-        search_window = data['search_window'].float()
-        if_pos = data['if_pos'].float()
-        if_neg = if_pos.eq(0)
-        if_unsup = data['if_unsup'].float()
-        if_sup = if_unsup.eq(0)
-        temp_cx = data['temp_cx'].float()
-        temp_cy = data['temp_cy'].float()
+        template_window = ops.cast(data['template_window'], ms.float32)
+        search_window = ops.cast(data['search_window'], ms.float32)
+        if_pos =  ops.cast(data['if_pos'], ms.float32)
+        if_neg = ops.equal(if_pos, 0)
+        if_unsup = ops.cast(data['if_unsup'], ms.float32)
+        if_sup = ops.equal(if_unsup, 0)
+        temp_cx = ops.cast(data['temp_cx'], ms.float32)
+        temp_cy = ops.cast(data['temp_cy'], ms.float32)
         tmp = ops.expand_dims(label_cls, 1)
-        tmp = tmp.expand(tmp.size(0), 2, tmp.size(2), tmp.size(3))
+        tmp = ops.broadcast_to(tmp, (tmp.shape[0], 2, tmp.shape[2], tmp.shape[3]))
         batch_sz = cfg.TRAIN.BATCH_SIZE
-        cur_device = search.device
 
         # get feature
         zf = self.feature_extractor(template)
@@ -397,29 +393,29 @@ class ModelBuilder(nn.Cell):
         if cfg.TRAIN.OBJ == 'ALL' or cfg.TRAIN.OBJ == 'HOMO':
 
             scale_h = True
-            scale_ones = torch.ones([batch_sz]).float()
-            rot_zero = torch.zeros([batch_sz]).float()
-            polar_zero = torch.zeros([batch_sz,2]).float()
+            scale_ones = ops.ones((batch_sz), ms.float32)
+            rot_zero = ops.Zeros()((batch_sz), ms.float32)
+            polar_zero = ops.Zeros()((batch_sz, 2), ms.float32)
 
             #FIXME use SIM-estimator
             affine_m = combine_affine_c0_v2(cfg.TRACK.EXEMPLAR_SIZE/2, cfg.TRACK.EXEMPLAR_SIZE/2, polar, scale, rot, scale_h, cfg.TRACK.INSTANCE_SIZE, cfg.TRACK.EXEMPLAR_SIZE)#warp the search image to 127*127 (self, nm_shift, scale, rot, scale_h, in_sz, out_sz):
             affine_m_lt0 = combine_affine_lt0(cfg.TRACK.EXEMPLAR_SIZE/2, cfg.TRACK.EXEMPLAR_SIZE/2, polar, 1/scale, -rot, cfg.TRACK.INSTANCE_SIZE, cfg.TRACK.EXEMPLAR_SIZE)# warp the poly in search to poly in 127*127
             affine_m_c_aug = combine_affine_c0_v2(temp_cx, temp_cy, polar_zero, scale_ones, rot_zero, scale_h, cfg.TRACK.INSTANCE_SIZE, cfg.TRACK.EXEMPLAR_SIZE)# warp the search accroding to the ,considering the template location
             affine_m_lt0_aug = combine_affine_lt0(temp_cx, temp_cy, polar_zero, scale_ones, rot_zero, cfg.TRACK.INSTANCE_SIZE, cfg.TRACK.EXEMPLAR_SIZE)
-            grid_size = torch.Size([cfg.TRAIN.BATCH_SIZE, 1, cfg.TRAIN.EXEMPLAR_SIZE, cfg.TRAIN.EXEMPLAR_SIZE])
+            grid_size = (cfg.TRAIN.BATCH_SIZE, 1, cfg.TRAIN.EXEMPLAR_SIZE, cfg.TRAIN.EXEMPLAR_SIZE)
 
-            warped_search_ori = self.stn_with_theta(search_hm, affine_m, grid_size)#directly warped the search_hm
-            search_hm_simi_ori = self.stn_with_theta(search_hm, affine_m_c_aug, grid_size) #to 127*127
-            poly_ones_tmp_var = torch.ones([cfg.TRAIN.BATCH_SIZE,1,4])
-            affine_m_ones_tmp_var = ms.Tensor([0,0,1]).float().repeat([cfg.TRAIN.BATCH_SIZE, 1, 1])
-            search_poly_hmg = ops.concat([search_poly.permute(0,2,1), poly_ones_tmp_var],1)
-            search_lt0_hm = ops.concat([affine_m_lt0, affine_m_ones_tmp_var],1)
-            search_aug_lt0_hm = ops.concat([affine_m_lt0_aug, affine_m_ones_tmp_var],1)#only resize the search poly
-            aug_sear_points = torch.bmm(search_aug_lt0_hm, search_poly_hmg)
-            pred_points = torch.bmm(search_lt0_hm, search_poly_hmg)#
+            warped_search_ori = self.stn_with_theta(search_hm, affine_m, grid_size, polar)#directly warped the search_hm
+            search_hm_simi_ori = self.stn_with_theta(search_hm, affine_m_c_aug, grid_size, polar) #to 127*127
+            poly_ones_tmp_var = ms.Tensor(shape=(cfg.TRAIN.BATCH_SIZE,1,4), dtype=ms.float32, init=One())
+            affine_m_ones_tmp_var = ms.numpy.tile(ms.Tensor([0,0,1], dtype=ms.float32), (cfg.TRAIN.BATCH_SIZE, 1, 1))
+            search_poly_hmg = ops.concat((search_poly.transpose(0,2,1), poly_ones_tmp_var),1)
+            search_lt0_hm = ops.concat((affine_m_lt0, affine_m_ones_tmp_var),1)
+            search_aug_lt0_hm = ops.concat((affine_m_lt0_aug, affine_m_ones_tmp_var),1)#only resize the search poly
+            aug_sear_points = ops.BatchMatMul()(search_aug_lt0_hm, search_poly_hmg)
+            pred_points = ops.BatchMatMul()(search_lt0_hm, search_poly_hmg)#
             template_hm_simi, search_hm_simi, wapred_search_simi = self.get_simi_data(template_hm, search_hm_simi_ori, warped_search_ori)
-            search_window = ops.expand_dims(search_window, 1).float()
-            search_window = self.stn_with_theta(search_window, affine_m, grid_size)
+            search_window = ops.expand_dims(search_window, 1)
+            search_window = self.stn_with_theta(search_window, affine_m, grid_size, polar)
 
             #ShareFeature
             tmp_f = self.hm_net.ShareFeature(template_hm_simi)
@@ -431,8 +427,8 @@ class ModelBuilder(nn.Cell):
             pre_sear_f = self.hm_net.ShareFeature(wapred_search_simi)
 
             #negative sample
-            unsup_pos_ids = (if_pos*if_unsup).eq(1).nonzero().squeeze(1)
-            unsup_ids = if_unsup.eq(1).nonzero().squeeze(1)
+            unsup_pos_ids = ops.equal(if_pos*if_unsup, 1).nonzero().squeeze(1)
+            unsup_ids = ops.equal(if_unsup, 1).nonzero().squeeze(1)
 
             if unsup_pos_ids.shape[0] != 0:
                 masked_tmp_f = masked_tmp_f[unsup_pos_ids]
@@ -441,11 +437,11 @@ class ModelBuilder(nn.Cell):
 
                 sim_loss_mat = triplet_loss(masked_tmp_f, pre_sear_f, masked_sear_f)# cause we warp back the search
                 #fixme
-                sim_loss = torch.sum(sim_loss_mat) / (127*127) / unsup_pos_ids.shape[0]
-                corner_pts_simi = pred_points.permute(0,2,1)[:, :, :-1] #
+                sim_loss = ops.ReduceSum()(sim_loss_mat) / (127*127) / unsup_pos_ids.shape[0]
+                corner_pts_simi = pred_points.transpose(0,2,1)[:, :, :-1] #
                 corner_pts_simi_pos = corner_pts_simi[unsup_pos_ids]
                 template_poly_simi_pos = template_poly[unsup_pos_ids]
-                corner_error_simi = torch.sum(ops.abs(corner_pts_simi_pos - template_poly_simi_pos)) / unsup_pos_ids.shape[0] / 4
+                corner_error_simi = ops.ReduceSum()(ops.abs(corner_pts_simi_pos - template_poly_simi_pos)) / unsup_pos_ids.shape[0] / 4
 
             #todo normalization
             if cfg.TRAIN.MODEL_TYPE == 'E2E':
@@ -458,7 +454,7 @@ class ModelBuilder(nn.Cell):
             if len(unsup_ids) > 0:
                 loss_feature = batch_out['feature_loss'].mean()
 
-        sup_ids = if_unsup.eq(0).nonzero().squeeze(1) #so far the neg_ids are designed for simi-estimator,
+        sup_ids = ops.equal(if_unsup, 0).nonzero().squeeze(1) #so far the neg_ids are designed for simi-estimator,
         if len(sup_ids) > 0 :
             cls_sup = cls[sup_ids]
             label_cls_sup = label_cls[sup_ids]
@@ -482,35 +478,35 @@ class ModelBuilder(nn.Cell):
                 loc_loss_lp_sup = select_l1_loss(loc_lp_sup, label_loc_lp_sup, label_cls_lp_sup)
 
 
-        sup_pos_ids = (if_sup*if_pos).eq(1).nonzero().squeeze(1)
-        sup_neg_ids = (if_sup*if_neg).eq(1).nonzero().squeeze(1)
+        sup_pos_ids = ops.equal(if_sup*if_pos, 1).nonzero().squeeze(1)
+        sup_neg_ids = ops.equal(if_sup*if_neg, 1).nonzero().squeeze(1)
         if len(sup_pos_ids) > 0 :
             ##corner error for supervised data(the poly)
-            corner_pts = torch.bmm(H_mat, pred_points).permute(0,2,1)
+            corner_pts = ops.BatchMatMul()(H_mat, pred_points).transpose(0,2,1)
             corner_pts = corner_pts / (ops.expand_dims(corner_pts[:,:,2], 2)) #normalize
             corner_pts = corner_pts[:, :, :-1]
             corner_pts_pos = corner_pts[sup_pos_ids]
             template_poly_pos = template_poly[sup_pos_ids]
-            corner_error = torch.sum(ops.abs(corner_pts_pos - template_poly_pos)) / sup_pos_ids.shape[0] / 4
-            corner_pts_aug = aug_sear_points.permute(0,2,1)[:, :, :-1]
+            corner_error = ops.ReduceSum()(ops.abs(corner_pts_pos - template_poly_pos)) / sup_pos_ids.shape[0] / 4
+            corner_pts_aug = aug_sear_points.transpose(0,2,1)[:, :, :-1]
             corner_pts_aug_pos = corner_pts_aug[sup_pos_ids]
-            corner_error_aug = torch.sum(ops.abs(corner_pts_aug_pos - template_poly_pos)) / sup_pos_ids.shape[0] / 4
+            corner_error_aug = ops.ReduceSum()(ops.abs(corner_pts_aug_pos - template_poly_pos)) / sup_pos_ids.shape[0] / 4
 
 
         #supervised_loss
         if len(sup_pos_ids) > 0 :
             #corner error for supervised data(the crop)
             #H_gt
-            homo_points = pred_points.permute(0,2,1)
+            homo_points = pred_points.transpose(0,2,1)
             homo_points = (homo_points / (ops.expand_dims(homo_points[:,:,2], 2)))[:,:,:-1]
             H_gt = DLT_solve(template_poly.reshape(-1,8), (homo_points - template_poly).reshape(-1,8)).squeeze(1)[sup_pos_ids]  #H: search -> template
             #construct a 127*127 search points.
-            search_corner = ops.expand_dims(ms.Tensor([[0,0], [0,127], [127,127], [127,0]]).float(), 0).repeat((H_gt.shape[0], 1, 1)).to(H_gt.device)
+            search_corner = ops.expand_dims(ms.Tensor([[0,0], [0,127], [127,127], [127,0]]).float(), 0).repeat((H_gt.shape[0], 1, 1))
             poly_ones_tmp_var = torch.ones([H_gt.shape[0],1,4])
-            search_corner_hmg = ops.concat([search_corner.permute(0,2,1), poly_ones_tmp_var],1)
+            search_corner_hmg = ops.concat((search_corner.transpose(0,2,1), poly_ones_tmp_var),1)
 
             # #warp the search corner accroding to H_gt
-            search_corner_warped = torch.bmm(H_gt, search_corner_hmg).permute(0,2,1)
+            search_corner_warped = ops.BatchMatMul()(H_gt, search_corner_hmg).transpose(0,2,1)
             search_corner_warped = search_corner_warped / (ops.expand_dims(search_corner_warped[:,:,2], 2)) #normalize
             search_corner_warped = search_corner_warped[:, :, :-1]
 
@@ -520,28 +516,28 @@ class ModelBuilder(nn.Cell):
             corner_loss_pos =  kalyo_l1_loss(pred_delta, search_corner_delta)
 
 
-        neg_ids = if_neg.eq(1).nonzero().squeeze(1)
+        neg_ids = ops.equal(if_neg, 1).nonzero().squeeze(1)
         if len(neg_ids):
             pred_neg_delta = batch_out['x'][neg_ids]
-            neg_zeros = ops.zeros_like(pred_neg_delta).to(cur_device)
+            neg_zeros = ops.zeros_like(pred_neg_delta)
             corner_loss_neg = kalyo_l1_loss(pred_neg_delta, neg_zeros)
 
 
         outputs = {}
         if cfg.TRAIN.OBJ == 'ALL':
-            outputs['cls_loss_sup'] =  ms.Tensor(0.0).to(cur_device)
-            outputs['loc_loss_sup'] = ms.Tensor(0.0).to(cur_device)
-            outputs['cls_loss_lp_sup'] = ms.Tensor(0.0).to(cur_device)
-            outputs['loc_loss_lp_sup'] = ms.Tensor(0.0).to(cur_device)
-            outputs['sim_cent_loss'] = ms.Tensor(0.0).to(cur_device)
-            outputs['sim_loss'] =  ms.Tensor(0.0).to(cur_device)
-            outputs['cor_err_aug'] = ms.Tensor(0.0).to(cur_device)
-            outputs['cor_err_sim'] = ms.Tensor(0.0).to(cur_device)
-            outputs['cor_err'] = ms.Tensor(0.0).to(cur_device)
-            outputs['cor_loss'] = ms.Tensor(0.0).to(cur_device)
-            outputs['cor_pos_loss'] = ms.Tensor(0.0).to(cur_device)
-            outputs['cor_neg_loss'] = ms.Tensor(0.0).to(cur_device)
-            outputs['homo_unsup_loss'] = ms.Tensor(0.0).to(cur_device)
+            outputs['cls_loss_sup'] =  ms.Tensor(0.0)
+            outputs['loc_loss_sup'] = ms.Tensor(0.0)
+            outputs['cls_loss_lp_sup'] = ms.Tensor(0.0)
+            outputs['loc_loss_lp_sup'] = ms.Tensor(0.0)
+            outputs['sim_cent_loss'] = ms.Tensor(0.0)
+            outputs['sim_loss'] =  ms.Tensor(0.0)
+            outputs['cor_err_aug'] = ms.Tensor(0.0)
+            outputs['cor_err_sim'] = ms.Tensor(0.0)
+            outputs['cor_err'] = ms.Tensor(0.0)
+            outputs['cor_loss'] = ms.Tensor(0.0)
+            outputs['cor_pos_loss'] = ms.Tensor(0.0)
+            outputs['cor_neg_loss'] = ms.Tensor(0.0)
+            outputs['homo_unsup_loss'] = ms.Tensor(0.0)
 
             if len(sup_ids) > 0 :
                 outputs['cls_loss_sup'] = cls_loss_sup

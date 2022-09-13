@@ -52,8 +52,7 @@ class SubDataset(object):
         for video in list(meta_data.keys()):
             for track in meta_data[video]:
                 frames = meta_data[video][track]
-                frames = list(map(int,
-                              filter(lambda x: x.isdigit(), frames.keys())))
+                frames = list(map(int, filter(lambda x: x.isdigit(), frames.keys())))
                 frames.sort()
                 meta_data[video][track]['frames'] = frames
                 if len(frames) <= 0:
@@ -64,8 +63,7 @@ class SubDataset(object):
             if len(meta_data[video]) <= 0:
                 logger.warning("{} has no tracks".format(video))
                 del meta_data[video]
-
-        self.labels = meta_data  # Todo :不能用dict？
+        self.labels = meta_data
         self.num = len(meta_data)  #video_num
         self.num_use = self.num if self.num_use == -1 else self.num_use
         self.videos = list(meta_data.keys())
@@ -100,13 +98,15 @@ class SubDataset(object):
             self.name, self.start_idx, self.num_use,
             self.num, self.path_format))
 
+    #随机选择num_use帧
     def shuffle(self):
         print('self.start_idx',self.start_idx,'self.num',self.num, 'self.num_use:',self.num_use)#self.start_idx 0 self.num 24 self.num_use: 100000
-        lists = list(range(self.start_idx, self.start_idx + self.num))
+        pickList = list(range(self.start_idx, self.start_idx + self.num))
         pick = []
         while len(pick) < self.num_use:
-            np.random.shuffle(lists)
-            pick += lists
+            np.random.shuffle(pickList)
+            pick += pickList
+        np.save("/data/HDN_var/subPickList.npy", np.array(pickList))
         return pick[:self.num_use]
 
     def get_image_anno(self, video, track, frame):

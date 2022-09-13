@@ -77,6 +77,8 @@ class POTDataset(Dataset):
         pbar = tqdm(meta_data.keys(), desc='loading '+name, ncols=100)
         self.videos = {}
         for video in pbar:
+            if video == 'V' or 'V01' not in video:
+                continue
             pbar.set_postfix_str(video)
             self.videos[video] = POTVideo(video,
                                           dataset_root,

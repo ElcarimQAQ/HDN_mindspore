@@ -42,7 +42,7 @@ def getPatchFromFullimg(patch_size_h, patch_size_w, patchIndices, batch_indices_
     warped_images_flat = img_full.reshape(-1)
     patch_indices_flat = patchIndices.reshape(-1)
     pixel_indices = patch_indices_flat.long() + batch_indices_tensor
-    mask_patch = torch.gather(warped_images_flat, 0, pixel_indices)
+    mask_patch = ops.gather_elements(warped_images_flat, 0, pixel_indices)
     mask_patch = mask_patch.reshape([num_batch, 1, patch_size_h, patch_size_w])
 
     return mask_patch

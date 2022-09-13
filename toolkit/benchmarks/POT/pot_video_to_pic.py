@@ -22,6 +22,8 @@ if __name__ == "__main__":
     seq_dirs = os.listdir(POT_Path)
     # for seq_dir in ['V15','V16']:
     for seq_dir in seq_dirs:
+        if  '.zip' in seq_dir:
+            continue
         p = os.path.join(POT_Path,seq_dir)
         videos_dir = os.listdir(p)
         for v_dir in videos_dir:

@@ -1,4 +1,4 @@
-#Copyright 2021, XinruiZhan
+#Copyright 2022,Libing Yang
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -8,7 +8,6 @@ from hdn.datasets.dataset.unconstrained_v2_dataset import BANDataset as unconstr
 from hdn.datasets.dataset.dataset import  SubDataset
 
 DATASETS = {
-    # 'simi_aug_dataset': simi_aug_dataset,
     'unconstrained_v2_dataset':unconstrained_v2_dataset,
     'sub_dataset': SubDataset
 }

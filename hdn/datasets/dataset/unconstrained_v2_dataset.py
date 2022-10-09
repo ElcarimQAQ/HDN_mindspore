@@ -1,4 +1,4 @@
-#Copyright 2021, XinruiZhan
+#Copyright 2022,Libing Yang
 """
  this file implements the perspective transforma augmentation on template image as search, or just use sampled two images from video as template and search.
 we just need to adjust the interval, if there is interval we use unsupervised, if not, then use supervised
@@ -8,7 +8,6 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 from mindspore.dataset import  transforms
-from hdn.datasets.custom_transforms import Normalize, ToTensor
 import time
 import json
 import logging
@@ -50,8 +49,7 @@ class  BANDataset():
         self.totalscale = 0.0
         self.curScale=0
 
-        desired_size = (cfg.TRAIN.SEARCH_SIZE - cfg.TRAIN.EXEMPLAR_SIZE) / \
-                       cfg.POINT.STRIDE + 1 + cfg.TRAIN.BASE_SIZE
+        desired_size = (cfg.TRAIN.SEARCH_SIZE - cfg.TRAIN.EXEMPLAR_SIZE) / cfg.POINT.STRIDE + 1 + cfg.TRAIN.BASE_SIZE
         if desired_size != cfg.TRAIN.OUTPUT_SIZE:
             raise Exception('size not match!')
 
@@ -61,7 +59,6 @@ class  BANDataset():
         self.point_target_c = PointTargetRot()
         # create sub dataset
         start = 0
-        # start = 0
         self.num = 0
         for name in cfg.DATASET.NAMES:
             subdata_cfg = getattr(cfg.DATASET, name)
@@ -71,7 +68,6 @@ class  BANDataset():
                 subdata_cfg.ANNO,
                 subdata_cfg.FRAME_RANGE,
                 subdata_cfg.NUM_USE,
-                # unsup_start,
                 start,
                 subdata_cfg.IF_UNSUP
             )

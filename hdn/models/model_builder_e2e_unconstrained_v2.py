@@ -1,4 +1,3 @@
-#Copyright 2021, XinruiZhan
 '''
 Designed for end-to-end homo-estimation.
 unconstrained means we whether dataset give us label we can train the model.
@@ -8,9 +7,9 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import torch
+
 import mindspore as ms
-from mindspore import ops, nn, Tensor
+from mindspore import ops, nn, Tensor, numpy
 import numpy as np
 from hdn.core.config import cfg
 from hdn.models.loss import select_cross_entropy_loss, \
@@ -21,7 +20,7 @@ from hdn.models.loss import  select_xr_focal_fuse_smooth_l1_loss
 from hdn.models.backbone import get_backbone
 from hdn.models.head import get_ban_head
 from hdn.models.neck import get_neck
-from hdn.models.logpolar import STN_Polar, getPolarImg, Polar_Pick, STN_LinearPolar
+from hdn.models.logpolar import STN_Polar, getPolarImg, Polar_Pick
 import matplotlib.pyplot as plt
 from hdn.utils.point import Point
 from homo_estimator.Deep_homography.Oneline_DLTv1.models.homo_model_builder import HomoModelBuilder, normMask
@@ -31,19 +30,22 @@ from homo_estimator.Deep_homography.Oneline_DLTv1.utils import DLT_solve
 from homo_estimator.Deep_homography.Oneline_DLTv1.utils import transform as Homo_STN
 from mindspore.scipy.linalg import inv
 from mindspore.common.initializer import One
-from hdn.models.triplet_loss import TripletMarginLoss
-from torchvision import transforms, utils
+from hdn.models.triplet_loss import TripletMarginLoss as myTripletMarginLoss
+from mindspore.nn.loss.loss import TripletMarginLoss
 
 criterion_l2 = nn.MSELoss()
-triplet_loss = TripletMarginLoss(margin=1.0, p=1)
+
+#todo: bug in mindspore 's triplet_loss
+myTriplet_loss = myTripletMarginLoss(margin=1.0, p=1)
+triplet_loss = TripletMarginLoss(p=1, reduction='none')
+
 class ModelBuilder(nn.Cell):
     # @profile
     def __init__(self):
         super(ModelBuilder, self).__init__()
 
         # build backbone
-        self.backbone = get_backbone(cfg.BACKBONE.TYPE,
-                                     **cfg.BACKBONE.KWARGS) #200M cpu mem
+        self.backbone = get_backbone(cfg.BACKBONE.TYPE,**cfg.BACKBONE.KWARGS)
 
         self.logpolar_instance = STN_Polar(cfg.TRACK.INSTANCE_SIZE)
         self.getPolar = Polar_Pick()
@@ -86,12 +88,13 @@ class ModelBuilder(nn.Cell):
 
     def feature_extractor(self, x):
         xf = self.backbone(x)
+        # show feature
         # plt.imshow(xf[-1].asnumpy()[0, 3, :, :])
         # plt.show()_convert_logpolar_simi
-        return xf #+ xf_lp
+        return xf
 
-    #TODO
     def template(self, z):
+        # z shape(1, 3, 127, 127)
         z_lp = z[:, 3:6, :, :]
         z = z[:, 0:3, :, :]
         zf = self.feature_extractor(z)
@@ -114,31 +117,9 @@ class ModelBuilder(nn.Cell):
         self.zf = zf
         self.zf_lp = zf_lp
 
-    def track(self, x, delta=[0,0]):
-        xf = self.feature_extractor(x)
-        if cfg.ADJUST.ADJUST:
-            xf = self.neck(xf)
-        cls, loc, cls_c, loc_c = self.head(self.zf, xf) #zf:template
-        polar = self.getPolar.get_polar_from_two_para_loc(cls, loc)
-        x_lp, _ = self.logpolar_instance(x, polar, delta)
-
-        # xxq
-        xf_lp = self.feature_extractor(x_lp)
-        if cfg.ADJUST.ADJUST:
-            xf_lp = self.neck_lp(xf_lp)
-        cls_lp, loc_lp = self.head_lp(self.zf_lp, xf_lp)
-
-        return {
-            'cls': cls,
-            'loc': loc,
-            'cls_c': cls_c,
-            'loc_c': loc_c,
-            'cls_lp': cls_lp,
-            'loc_lp': loc_lp
-        }
     # TODO
     def track_new(self, x, delta=[0,0]):
-        # x: [1, 3, 255, 255]
+        # x shape [1, 3, 255, 255]
         xf = self.feature_extractor(x)
         if cfg.ADJUST.ADJUST:
             xf = self.neck(xf)
@@ -149,8 +130,8 @@ class ModelBuilder(nn.Cell):
         }
 
 
-
     def track_new_lp(self, x, delta=[0,0]):
+        # x shape [1, 3, 255, 255]
         polar = ops.ExpandDims()(ops.Zeros()(2, ms.float32), 0)
         x_lp, grid = self.logpolar_instance(x, polar, delta)
         # x_lp_np = np.load('/home/lbyang/data/x_lp_np.npy')
@@ -209,7 +190,7 @@ class ModelBuilder(nn.Cell):
 
         M_tile = ops.broadcast_to(ops.expand_dims(M_tensor, 0), (batch_size, M_tensor.shape[-2], M_tensor.shape[-1]))
         # Inverse of M
-        M_tensor_inv = inv(M_tensor)
+        M_tensor_inv = inv(M_tensor, overwrite_a=True, check_finite=False)
         M_tile_inv = ops.broadcast_to(ops.expand_dims(M_tensor_inv, 0), (batch_size, M_tensor_inv.shape[-2], M_tensor_inv.shape[-1]))
         pred_I2 = Homo_STN(patch_size_h, patch_size_w, M_tile_inv, H_mat, M_tile,
                            org_imgs[:, :1, ...], patch_inds, batch_inds_tensor)
@@ -234,10 +215,8 @@ class ModelBuilder(nn.Cell):
             cls = ops.Softmax(axis=3)(cls)
         return cls
 
-    # Todo：affine_grid 算子缺失，先凑合一下跑通
     def stn_with_theta(self, x, theta, size, polar):
         theta = theta.view(-1, 2, 3)
-        # grid = self.logpolar_instance.get_logpolar_grid(polar, x.shape)  # [1 127 127 2]
         grid = ops.affine_grid(theta, size)
         x = ops.grid_sample(x, grid)
         return x
@@ -354,8 +333,6 @@ class ModelBuilder(nn.Cell):
         if_sup = ops.equal(if_unsup, 0)
         temp_cx = ops.cast(data['temp_cx'], ms.float32)
         temp_cy = ops.cast(data['temp_cy'], ms.float32)
-        tmp = ops.expand_dims(label_cls, 1)
-        tmp = ops.broadcast_to(tmp, (tmp.shape[0], 2, tmp.shape[2], tmp.shape[3]))
         batch_sz = cfg.TRAIN.BATCH_SIZE
 
         # get feature
@@ -434,10 +411,12 @@ class ModelBuilder(nn.Cell):
                 masked_tmp_f = masked_tmp_f[unsup_pos_ids]
                 masked_sear_f = masked_sear_f[unsup_pos_ids]
                 pre_sear_f = pre_sear_f[unsup_pos_ids]
+                margin = ms.Tensor(1.0)
 
-                sim_loss_mat = triplet_loss(masked_tmp_f, pre_sear_f, masked_sear_f)# cause we warp back the search
+                # sim_loss_mat = triplet_loss(masked_tmp_f, pre_sear_f, masked_sear_f, margin)# cause we warp back the search
+                sim_loss_mat = myTriplet_loss(masked_tmp_f, pre_sear_f, masked_sear_f)
                 #fixme
-                sim_loss = ops.ReduceSum()(sim_loss_mat) / (127*127) / unsup_pos_ids.shape[0]
+                sim_loss = sim_loss_mat.sum() / (127*127) / unsup_pos_ids.shape[0]
                 corner_pts_simi = pred_points.transpose(0,2,1)[:, :, :-1] #
                 corner_pts_simi_pos = corner_pts_simi[unsup_pos_ids]
                 template_poly_simi_pos = template_poly[unsup_pos_ids]
@@ -479,7 +458,7 @@ class ModelBuilder(nn.Cell):
 
 
         sup_pos_ids = ops.equal(if_sup*if_pos, 1).nonzero().squeeze(1)
-        sup_neg_ids = ops.equal(if_sup*if_neg, 1).nonzero().squeeze(1)
+        sup_neg_ids = ops.equal(if_sup*ops.cast(if_neg, ms.float32), 1).nonzero().squeeze(1)
         if len(sup_pos_ids) > 0 :
             ##corner error for supervised data(the poly)
             corner_pts = ops.BatchMatMul()(H_mat, pred_points).transpose(0,2,1)
@@ -501,8 +480,8 @@ class ModelBuilder(nn.Cell):
             homo_points = (homo_points / (ops.expand_dims(homo_points[:,:,2], 2)))[:,:,:-1]
             H_gt = DLT_solve(template_poly.reshape(-1,8), (homo_points - template_poly).reshape(-1,8)).squeeze(1)[sup_pos_ids]  #H: search -> template
             #construct a 127*127 search points.
-            search_corner = ops.expand_dims(ms.Tensor([[0,0], [0,127], [127,127], [127,0]]).float(), 0).repeat((H_gt.shape[0], 1, 1))
-            poly_ones_tmp_var = torch.ones([H_gt.shape[0],1,4])
+            search_corner = ops.cast(numpy.tile(ops.expand_dims(ms.Tensor([[0,0], [0,127], [127,127], [127,0]]), 0), (H_gt.shape[0], 1, 1)), ms.float32)
+            poly_ones_tmp_var = ops.ones((H_gt.shape[0],1,4), ms.float32)
             search_corner_hmg = ops.concat((search_corner.transpose(0,2,1), poly_ones_tmp_var),1)
 
             # #warp the search corner accroding to H_gt
@@ -545,7 +524,7 @@ class ModelBuilder(nn.Cell):
                 outputs['cls_loss_lp_sup'] = cls_loss_lp_sup
                 outputs['loc_loss_lp_sup'] = loc_loss_lp_sup
                 outputs['sim_cent_loss'] = cfg.TRAIN.CLS_WEIGHT * (cls_loss_lp_sup + cls_loss_sup) + \
-                                           cfg.TRAIN.LOC_WEIGHT * (loc_loss_sup + loc_loss_lp_sup)#supervised
+                                           cfg.TRAIN.LOC_WEIGHT * (loc_loss_sup + loc_loss_lp_sup)#supervisedv  similarity component
             if len(sup_pos_ids) > 0:
                 outputs['cor_err_aug'] = corner_error_aug #supervised
                 outputs['cor_err'] = corner_error #supervised
@@ -559,5 +538,6 @@ class ModelBuilder(nn.Cell):
             if len(unsup_pos_ids) > 0:
                 outputs['sim_loss']  = sim_loss #unsupervised
                 outputs['cor_err_sim'] = corner_error_simi #supervised
-            outputs['total_loss'] = outputs['sim_cent_loss']*100 + outputs['homo_unsup_loss'] + outputs['cor_neg_loss'] + outputs['cor_err']/4
-        return outputs
+            # outputs['total_loss'] = outputs['sim_cent_loss']*100 + outputs['homo_unsup_loss'] + outputs['cor_neg_loss'] + outputs['cor_err']/4
+            outputs['total_loss'] =  outputs['homo_unsup_loss'] + outputs['cor_neg_loss'] + outputs['cor_err']/4
+        return outputs['total_loss']

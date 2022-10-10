@@ -3,7 +3,7 @@ import numpy as np
 import math
 
 import os
-import argparse
+# import argparse
 
 
 import matplotlib.pyplot as plt
@@ -13,10 +13,10 @@ from mindspore import nn, ops, context, Tensor, numpy
 from mindspore.common.initializer import Normal, initializer,One
 from hdn.utils.point import generate_points, generate_points_lp, lp_pick
 
-parser = argparse.ArgumentParser(description='siamese tracking')
-parser.add_argument('--cfg', type=str, default='config.yaml',
-                    help='configuration of tracking')
-args = parser.parse_args()
+# parser = argparse.ArgumentParser(description='siamese tracking')
+# parser.add_argument('--cfg', type=str, default='config.yaml',
+#                     help='configuration of tracking')
+# args = parser.parse_args()
 
 def getPolarImg(img, original = None):
     """
@@ -97,13 +97,13 @@ class STN_Polar(nn.Cell):
         rho_batch = delta[0] + (ops.exp(mag * x_ls) - 1.0)
         theta_batch = delta[1] + y_ls * 2.0 * math.pi / sz[1]
         for rho, theta in rho_batch,theta_batch:
-            y, x = torch.meshgrid([theta, rho])
+            y, x = ops.Meshgrid(indexing="ij")((theta, rho))
             cosy = ops.cos(y)
             siny = ops.sin(y)
 
             # construct final indices
-            self.indices_x = torch.mul(x, cosy)
-            self.indices_y = torch.mul(x, siny)
+            self.indices_x = ops.mul(x, cosy)
+            self.indices_y = ops.mul(x, siny)
 
 
 
@@ -280,36 +280,6 @@ class Polar_Pick(nn.Cell):
         out[:, 0] = (point[:, 0] - delta[:, 0] + point[:, 0] + delta[:, 2]) / 2
         out[:, 1] = (point[:, 1] - delta[:, 1] + point[:, 1] + delta[:, 3]) / 2
         return out
-
-
-
-    def get_polar_from_two_para_loc (self, cls, loc):
-        # self.test_self_points()
-        sizes = cls.shape
-        batch = sizes[0]
-        score = ops.transpose(cls.view(batch, cfg.BAN.KWARGS.cls_out_channels, -1), (0, 2, 1))
-        best_idx = ops.Argmax(1)(score[:, :, 1])
-
-        idx = best_idx.unsqueeze(1)
-        idx = idx.unsqueeze(2)
-        #fixme use gt
-        # delta = loc.view(batch, 4, -1).permute(0, 2, 1)
-        # delta = loc.view(batch, 6, -1).permute(0, 2, 1)
-        #fixme use  pred_loc
-        delta = ops.transpose(loc.view(batch, 2, -1), (0, 2, 1))
-
-        dummy = idx.expand(batch, 1, delta.shape[2])
-        point = self.points.cuda()
-        point = point.expand(batch, point.size[0], point.size[1])
-
-        delta = ops.gather_elements(delta, 1, dummy).squeeze(1)
-        point = ops.gather_elements(point, 1, dummy[:,:,0:2]).squeeze(1)
-
-        out = torch.zeros(batch, 2).cuda()
-        out[:, 0] = point[:, 0] - delta[:, 0]
-        out[:, 1] = point[:, 1] - delta[:, 1]
-        return out
-
 
     #shorten the time.
     def get_polar_from_two_para_loc (self, cls, loc):

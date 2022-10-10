@@ -1,4 +1,4 @@
-#Copyright 2021, XinruiZhan
+#Copyright 2022, LibingYang
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -6,7 +6,6 @@ from __future__ import unicode_literals
 
 import numpy as np
 import mindspore as ms
-import math
 
 from mindspore import ops
 
@@ -24,8 +23,7 @@ import matplotlib.pyplot as plt
 class hdnTrackerHomo(hdnTracker):
     def __init__(self, model):
         super(hdnTrackerHomo, self).__init__(model)
-        self.score_size = (cfg.TRACK.INSTANCE_SIZE - cfg.TRACK.EXEMPLAR_SIZE) // \
-                          cfg.POINT.STRIDE + 1 + cfg.TRACK.BASE_SIZE
+        self.score_size = (cfg.TRACK.INSTANCE_SIZE - cfg.TRACK.EXEMPLAR_SIZE) // cfg.POINT.STRIDE + 1 + cfg.TRACK.BASE_SIZE
         hanning = np.hanning(self.score_size)
         window = np.outer(hanning, hanning)
         self.cls_out_channels = cfg.BAN.KWARGS.cls_out_channels
@@ -34,14 +32,6 @@ class hdnTrackerHomo(hdnTracker):
         self.p = Point(cfg.POINT.STRIDE, cfg.TRAIN.OUTPUT_SIZE, cfg.TRAIN.EXEMPLAR_SIZE // 2)
         self.points_lp = self.generate_points_lp(cfg.POINT.STRIDE_LP, cfg.POINT.STRIDE_LP, cfg.TRAIN.OUTPUT_SIZE_LP) #self.p.points.transpose((1, 2, 0)).reshape(-1, 2)
         self.model = model
-        # self.model.eval()
-
-    def mask_img(self, img, points ):# cx, cy, w, h, rot
-        mask = np.zeros([img.shape[0], img.shape[1]])
-        contours = [points.astype(np.int32)]
-        cv2.drawContours(mask, contours, 0, (1), -1)
-        img[np.where(mask<=0)] = 0
-        return img
 
     def homo_estimate(self, tmp, search, tmp_mask):
         merge_info = merge_tmp_search(tmp, search)
@@ -61,8 +51,6 @@ class hdnTrackerHomo(hdnTracker):
         data['patch_indices'] = patch_indices
         H, homo_score, simi_score = self.model.track_proj(data, tmp_mask)
         return H, homo_score, simi_score
-
-
 
     def init(self, img, bbox, poly, gt_points, first_point):
         """
@@ -127,26 +115,7 @@ class hdnTrackerHomo(hdnTracker):
         self.H_total_sim = np.array([[1, 0, 0],[0, 1, 0],[0, 0, 1]], dtype=np.float32)
         self.uncertain = 0
         self.recover_H = np.identity(3).astype('float')
-    def update_template(self):
-        img = self.init_img
-        img = img_rot_around_center(img, self.init_pos[0], self.init_pos[1], img.shape[1], img.shape[0], self.lp_shift[1])
-        self.z_crop = self.get_subwindow(img, self.init_pos,
-                                         cfg.TRACK.EXEMPLAR_SIZE,
-                                         self.init_s_z,self.channel_average, islog=1)
-        self.model.template(self.z_crop)
 
-    def update_template_window(self,sc):
-        img = self.init_img
-        z_crop = self.get_subwindow(img, self.init_pos,
-                                    cfg.TRACK.EXEMPLAR_SIZE,
-                                    self.init_s_z*sc ,self.channel_average, islog=1)
-        self.model.template(z_crop)
-
-    def get_points_by_homo(self, uni_points, H):
-        pred_points = H @ uni_points
-        pred_points = np.vsplit(pred_points,[2])[0]
-        pred_points = pred_points.transpose([1,0])
-        return pred_points
     def track_new(self, fr_idx, img, gt_box=None, gt_poly=None, gt_points=None):
         """
         args:
@@ -178,8 +147,7 @@ class hdnTrackerHomo(hdnTracker):
         pred_c = self._convert_c(outputs['loc_c'], self.points)
         pscore = score
         # TODO window penalty
-        pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) + \
-                 self.window * cfg.TRACK.WINDOW_INFLUENCE
+        pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) +  self.window * cfg.TRACK.WINDOW_INFLUENCE
         best_idx = np.argmax(pscore)
         stop_update_flag = 0
         if pscore[best_idx] < 0.05 :
@@ -254,8 +222,7 @@ class hdnTrackerHomo(hdnTracker):
             H_hm = H_hm.squeeze(0).asnumpy()
             H_hm = np.linalg.inv(H_hm)
             H_hm = (1.0 / H_hm.item(8)) * H_hm
-            homo_search_img = np.expand_dims(cv2.warpPerspective(homo_search_img[0], np.linalg.inv(H_hm), (127,127),
-                                                                 borderMode=cv2.BORDER_REPLICATE), 0)
+            homo_search_img = np.expand_dims(cv2.warpPerspective(homo_search_img[0], np.linalg.inv(H_hm), (127,127),borderMode=cv2.BORDER_REPLICATE), 0)
             H_hm_comp = H_hm_comp @ H_hm
         scale_H_1 = np.array([[resize_crop_w/crop_points_w , 0, 0],
                               [0, resize_crop_h/crop_points_h, 0],

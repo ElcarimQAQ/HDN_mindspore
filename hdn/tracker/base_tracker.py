@@ -51,6 +51,7 @@ class SiameseTracker(BaseTracker):
         delta[3, :] = point[:, 1] + delta[3, :]
         delta[0, :], delta[1, :], delta[2, :], delta[3, :] = corner2center(delta)
         return delta
+
     def _convert_delta(self, delta):
         delta = ops.Transpose()(delta, (1, 2, 3, 0)).view(4, -1)
         delta = delta.asnumpy()
@@ -76,7 +77,6 @@ class SiameseTracker(BaseTracker):
             pos = [pos, pos]
         sz = original_sz
         im_sz = im.shape
-        # c = (original_sz + 1) / 2
         c = (original_sz - 1) / 2
 
         # context_xmin = round(pos[0] - c) # py2 and py3 round
@@ -213,72 +213,12 @@ class SiameseTracker(BaseTracker):
         im_patch = im_patch.astype(np.float32)
         im_patch = numpy.ascontiguousarray(im_patch)
         im_patch = ms.Tensor.from_numpy(im_patch)
-        # if cfg.CUDA:
-        #     im_patch = im_patch.cuda()
+
         return im_patch, (context_xmin, context_ymin, context_xmax+1, context_ymax+1)
 
 
 
 
-    def get_subwindow_for_sift(self, im, pos, obj_sz):
-        """
-        args:
-            im: bgr based image
-            pos: center position
-            model_sz: exemplar size
-            s_z: original size
-            avg_chans: channel average
-        """
-        #we only need to mask the non-object field.
 
 
 
-        if isinstance(pos, float):
-            pos = [pos, pos]
-        mask = np.zeros([im.shape[0], im.shape[1]])
-        im = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY).astype('uint8')
-        # im = np.mean(im, axis=2, keepdims=True)[:,:,0]
-
-        mask[int(int(pos[1])-obj_sz[1]//2+1):int(int(pos[1])+obj_sz[1]//2+1),int(int(pos[0])-obj_sz[0]//2+1):int(int(pos[0])+obj_sz[0]//2+1), ] = 1
-        im = (im * mask).astype('uint8')
-        # im = np.expand_dims(im, axis=2)
-        return im
-
-
-    def get_subwindow_for_SuperGlue(self, im, pos, obj_sz):
-        """
-        args:
-            im: bgr based image
-            pos: center position
-            model_sz: exemplar size
-            s_z: original size
-            avg_chans: channel average
-        """
-        #we only need to mask the non-object field.
-
-
-
-        if isinstance(pos, float):
-            pos = [pos, pos]
-        mask = np.zeros([im.shape[0], im.shape[1]])
-        im = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY).astype('uint8')
-        mask[int(int(pos[1])-obj_sz[1]//2+1):int(int(pos[1])+obj_sz[1]//2+1),int(int(pos[0])-obj_sz[0]//2+1):int(int(pos[0])+obj_sz[0]//2+1), ] = 1
-        im = (im * mask).astype('uint8')
-        return im
-
-
-    def get_subwindow_for_lisrd(self, im, pos, obj_sz):
-        """
-        args:
-            im: bgr based image
-            pos: center position
-            model_sz: exemplar size
-            s_z: original size
-            avg_chans: channel average
-        """
-        if isinstance(pos, float):
-            pos = [pos, pos]
-        mask = np.zeros([im.shape[0], im.shape[1],3])
-        mask[int(int(pos[1])-obj_sz[1]//2+1):int(int(pos[1])+obj_sz[1]//2+1),int(int(pos[0])-obj_sz[0]//2+1):int(int(pos[0])+obj_sz[0]//2+1), ] = 1
-        im = (im * mask).astype('uint8')
-        return im

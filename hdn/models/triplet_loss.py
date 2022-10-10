@@ -15,4 +15,4 @@ class TripletMarginLoss(nn.Cell):
         distance_positive = self.calc_euclidean(anchor, positive)
         distance_negative = self.calc_euclidean(anchor, negative)
         loss = ops.maximum(0.0, distance_positive - distance_negative + self.margin)
-        return loss.mean()
+        return loss

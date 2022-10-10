@@ -144,15 +144,13 @@ class ResNet(nn.Cell):
         else:
             self.layer4 = lambda x: x  # identity
 
-        for m in self.cells():
+        for _, m in self.cells_and_names():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight = initializer(Normal(0, math.sqrt(2. / n)), [64,3,7,7], mindspore.float32)
+                m.weight.set_data(initializer(Normal(0, math.sqrt(2. / n)), m.weight.shape))
             elif isinstance(m, nn.BatchNorm2d):
-                fill = ops.Fill()
-                m.weight = fill(mindspore.float32, (64, ), 1)
-                zeroslike = ops.ZerosLike()
-                m.bias = zeroslike(Tensor(shape=(64, ), dtype=mindspore.float32, init=One()))
+                m.gamma.set_data(initializer('ones', m.gamma.shape))
+                m.beta.set_data(initializer('zeros', m.beta.shape))
 
     def _make_layer(self, block, planes, blocks, stride=1, dilation=1):
         downsample = None

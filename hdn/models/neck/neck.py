@@ -13,7 +13,7 @@ class AdjustLayer(nn.Cell):
         super(AdjustLayer, self).__init__()
         self.downsample = nn.SequentialCell(
             nn.Conv2d(in_channels, out_channels, kernel_size=1, pad_mode='valid'),
-            nn.BatchNorm2d(out_channels, momentum=0.1),
+            nn.BatchNorm2d(out_channels),
             )
         self.cut = cut
         self.cut_left = cut_left

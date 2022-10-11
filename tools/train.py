@@ -16,11 +16,7 @@ import numpy as np
 
 import mindspore as ms
 from mindspore import context, set_seed, nn, Tensor
-from torch.utils.data import DataLoader
 import mindspore.dataset as ds
-from torch.utils.tensorboard import SummaryWriter
-from torch.nn.utils import clip_grad_norm_
-from torch.utils.data.distributed import DistributedSampler
 from hdn.utils.lr_scheduler import build_lr_scheduler
 from hdn.utils.log_helper import init_log, print_speed, add_file_handler
 from hdn.utils.distributed import dist_init, DistModule, reduce_gradients, \
@@ -35,8 +31,6 @@ from hdn.datasets.dataset import get_dataset
 from hdn.core.config import cfg
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-import torch.optim as optim
-# from torchviz import make_dot
 import cv2
 import time
 logger = logging.getLogger('global')
@@ -50,7 +44,7 @@ parser.add_argument('--local_rank', type=int, default=0,
                     help='compulsory for pytorch launcer')
 args = parser.parse_args()
 
-# CUDA_VISIBLE_DEVICES=0,1,2,3
+CUDA_VISIBLE_DEVICES=0
 
 
 
@@ -84,15 +78,8 @@ def build_data_loader():
     logger.info("build dataset done")
 
     train_sampler = None
-    # if get_world_size() > 1:
-    #     train_sampler = DistributedSampler(train_dataset)
     print('num_worker',cfg.TRAIN.NUM_WORKERS)
     #we don't have enough memory
-    # train_loader = DataLoader(train_dataset,
-    #                           batch_size=cfg.TRAIN.BATCH_SIZE,
-    #                           num_workers=cfg.TRAIN.NUM_WORKERS,
-    #                           pin_memory=False,
-    #                           sampler=train_sampler)
     train_dataset = ds.GeneratorDataset(train_dataset, column_names = [
                     'template',
                     "template_lp",
@@ -120,39 +107,39 @@ def build_data_loader():
 
 def build_opt_lr(model, current_epoch=0):
     model.set_train(True)
-    for param in model.backbone.get_parameters():
+    for param in model.backbone.trainable_params():
         param.requires_grad = False
-    for m in model.backbone.cells():
+    for _, m in model.backbone.cells_and_names():
         if isinstance(m, nn.BatchNorm2d):
             m.set_train(False)
     if current_epoch >= cfg.BACKBONE.TRAIN_EPOCH:
         for layer in cfg.BACKBONE.TRAIN_LAYERS:
             for param in getattr(model.backbone, layer).get_parameters():
-                param.requires_grad = True
-            for m in getattr(model.backbone, layer).cells():
+                if 'beta'in param.name or 'weight' in param.name or 'gamma'in param.name:
+                    param.requires_grad = True
+            for _, m in getattr(model.backbone, layer).cells_and_names():
                 if isinstance(m, nn.BatchNorm2d):
                     m.set_train(True)
 
     trainable_params = []
-    # trainable_params += [{'params': filter(lambda x: x.requires_grad,
-    #                                        model.backbone.get_parameters()), #Todo:没有
-    #                       'lr': cfg.BACKBONE.LAYERS_LR * cfg.TRAIN.BASE_LR}]
+    trainable_params += [{'params': model.backbone.trainable_params(), #Todo:没有
+                          'lr': cfg.BACKBONE.LAYERS_LR * cfg.TRAIN.BASE_LR}]
 
     if cfg.ADJUST.ADJUST:
         if cfg.TRAIN.OBJ == 'LP':
             for param in model.neck.get_parameters():
                 param.requires_grad = False
-            trainable_params += [{'params': model.neck_lp.get_parameters(),
+            trainable_params += [{'params': model.neck_lp.trainable_params(),
                                   'lr': cfg.TRAIN.BASE_LR}]
         elif cfg.TRAIN.OBJ == 'NM':
             for param in model.neck_lp.get_parameters():
                 param.requires_grad = False
-            trainable_params += [{'params': model.neck.get_parameters(),
+            trainable_params += [{'params': model.neck.trainable_params(),
                                   'lr': cfg.TRAIN.BASE_LR}]
         elif cfg.TRAIN.OBJ == 'SIM' or cfg.TRAIN.OBJ == 'ALL':
-            trainable_params += [{'params': model.neck_lp.get_parameters(),
+            trainable_params += [{'params': model.neck_lp.trainable_params(),
                                   'lr': cfg.TRAIN.BASE_LR}]
-            trainable_params += [{'params': model.neck.get_parameters(),
+            trainable_params += [{'params': model.neck.trainable_params(),
                                   'lr': cfg.TRAIN.BASE_LR}]
         elif cfg.TRAIN.OBJ == 'HOMO':
             for param in model.neck.get_parameters():
@@ -161,176 +148,40 @@ def build_opt_lr(model, current_epoch=0):
                 param.requires_grad = False
     # neck & head
     if cfg.TRAIN.OBJ == 'LP':
-        trainable_params += [{'params': model.head_lp.get_parameters(),
+        trainable_params += [{'params': model.head_lp.trainable_params(),
                               'lr': cfg.TRAIN.BASE_LR}]
         for param in model.head.get_parameters():
             param.requires_grad = False
     elif cfg.TRAIN.OBJ == 'NM':
-        trainable_params += [{'params': model.head.get_parameters(),
+        trainable_params += [{'params': model.head.trainable_params(),
                               'lr': cfg.TRAIN.BASE_LR}]
         for param in model.head_lp.get_parameters():
             param.requires_grad = False
     elif cfg.TRAIN.OBJ == 'SIM':
-        trainable_params += [{'params': model.head_lp.get_parameters(),
+        trainable_params += [{'params': model.head_lp.trainable_params(),
                               'lr': cfg.TRAIN.BASE_LR}]
-        trainable_params += [{'params': model.head.get_parameters(),
+        trainable_params += [{'params': model.head.trainable_params(),
                               'lr': cfg.TRAIN.BASE_LR}]
-        trainable_params += [{'params': model.hm_net.get_parameters(),
+        trainable_params += [{'params': model.hm_net.trainable_params(),
                               'lr': cfg.TRAIN.HOMO_START_LR}]
     elif cfg.TRAIN.OBJ == 'ALL':
-        trainable_params += [{'params': model.head_lp.get_parameters(),
+        trainable_params += [{'params': model.head_lp.trainable_params(),
                               'lr': cfg.TRAIN.BASE_LR}]
-        trainable_params += [{'params': model.head.get_parameters(),
+        trainable_params += [{'params': model.head.trainable_params(),
                               'lr': cfg.TRAIN.BASE_LR}]
-        trainable_params += [{'params': model.hm_net.get_parameters(),
+        trainable_params += [{'params': model.hm_net.trainable_params(),
                               'lr': cfg.TRAIN.HOMO_START_LR * cfg.TRAIN.HOMO_LR_RATIO}]
 
-    optimizer = nn.Adam(params=trainable_params, learning_rate=cfg.TRAIN.BASE_LR, use_amsgrad=True, weight_decay=1e-4)  # default as 0.0001
-    lr_scheduler = nn.ExponentialDecayLR(cfg.TRAIN.BASE_LR, decay_rate=0.8, decay_steps= 3125)
-    result = lr_scheduler(cfg.TRAIN.START_EPOCH)
+    lr_scheduler = nn.ExponentialDecayLR(cfg.TRAIN.BASE_LR, decay_rate=0.8, decay_steps= cfg.TRAIN.EPOCH)
+    for i in range(cfg.TRAIN.EPOCH):
+        step = ms.Tensor(i, ms.int32)
+        result = lr_scheduler(step)
+        print(f"step{i + 1}, lr:{result}")
+
+    optimizer = nn.Adam(params=trainable_params, learning_rate=lr_scheduler, use_amsgrad=True)
     return optimizer, lr_scheduler
 
-
-def log_grads(model, tb_writer, tb_index):
-    def weights_grads(model):
-        grad = {}
-        weights = {}
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                grad[name] = param.grad
-                weights[name] = param.data
-        return grad, weights
-
-    grad, weights = weights_grads(model)
-    feature_norm, head_norm = 0, 0
-    for k, g in grad.items():
-        _norm = g.data.norm(2)
-        # print('weight', weights[k])
-        weight = weights[k]
-        w_norm = weight.norm(2)
-        w_norm_avg = weight.norm(1)/weight.shape[0]
-        # print('w_norm',w_norm)
-        if 'feature' in k:
-            feature_norm += _norm ** 2
-        else:
-            head_norm += _norm ** 2
-
-        tb_writer.add_scalar('grad_all/' + k.replace('.', '/'),
-                             _norm, tb_index)
-        tb_writer.add_scalar('weight_all/' + k.replace('.', '/'),
-                             w_norm, tb_index)
-        tb_writer.add_scalar('w-g/' + k.replace('.', '/'),
-                             w_norm / (1e-20 + _norm), tb_index)
-        tb_writer.add_scalar('w_norm_avg' + k.replace('.', '/'),
-                             w_norm_avg, tb_index)
-    tot_norm = feature_norm + head_norm
-    tot_norm = tot_norm ** 0.5
-    feature_norm = feature_norm ** 0.5
-    head_norm = head_norm ** 0.5
-
-    tb_writer.add_scalar('grad/tot', tot_norm, tb_index)
-    tb_writer.add_scalar('grad/feature', feature_norm, tb_index)
-    tb_writer.add_scalar('grad/head', head_norm, tb_index)
-
-
-
-def train(train_dataset, model, optimizer, lr_scheduler, tb_writer):
-    # rank = get_rank()
-    average_meter = AverageMeter()
-
-    def is_valid_number(x):
-        return not (math.isnan(x) or math.isinf(x) or x > 1e4)
-
-    # world_size = get_world_size()
-    world_size = 1
-    num_per_epoch = train_dataset.children[0].source_len // cfg.TRAIN.EPOCH // (cfg.TRAIN.BATCH_SIZE * world_size)
-
-    start_epoch = cfg.TRAIN.START_EPOCH
-    epoch = start_epoch
-    print('start epoch', cfg.TRAIN.START_EPOCH)
-    if not os.path.exists(cfg.TRAIN.SNAPSHOT_DIR):
-        os.makedirs(cfg.TRAIN.SNAPSHOT_DIR)
-
-    # logger.info("model\n{}".format(describe(model.cells())))
-    end = time.time()
-    print('num_per_epoch', num_per_epoch)
-
-    for idx, data in enumerate(train_dataset):
-        if epoch != idx // num_per_epoch + start_epoch:  #更新epoch
-            epoch = idx // num_per_epoch + start_epoch
-
-
-            ms.save_checkpoint(
-                {'epoch': epoch,
-                 'state_dict': model.parameters_dict(),
-                 'optimizer': optimizer.parameters_dict()}, # 估计有问题
-                cfg.TRAIN.SNAPSHOT_DIR + '/got_e2e_%s_e%d.pth' % (cfg.TRAIN.OBJ, epoch))
-
-            if epoch == cfg.TRAIN.EPOCH:
-                return
-
-            if cfg.BACKBONE.TRAIN_EPOCH == epoch:
-                logger.info('start training backbone.')
-                optimizer, lr_scheduler = build_opt_lr(model.module, epoch)
-                logger.info("model\n{}".format(describe(model.module)))
-            lr_scheduler(epoch)
-            logger.info('epoch: {}'.format(epoch + 1))
-        # tb_idx = idx + start_epoch * num_per_epoch
-        # if idx % num_per_epoch == 0 and idx != 0:
-        #     for idx, pg in enumerate(optimizer.param_groups):
-        #         logger.info('epoch {} lr {}'.format(epoch + 1, pg['lr']))
-        #         if rank == 0:
-        #             tb_writer.add_scalar('lr/group{}'.format(idx + 1),
-        #                                  pg['lr'], tb_idx)
-        #
-        # data_time = average_reduce(time.time() - end)
-        # if rank == 0:
-        #     tb_writer.add_scalar('time/data', data_time, tb_idx)
-
-        # with torch.autograd.detect_anomaly():
-
-
-        outputs = model(data)
-
-        loss = outputs['total_loss']
-        if is_valid_number(loss.data.item()):
-            loss.backward()
-            reduce_gradients(model)
-            clip_grad_norm_(model.parameters(), cfg.TRAIN.GRAD_CLIP)
-            optimizer.step()
-        batch_time = time.time() - end
-        batch_info = {}
-        batch_info['batch_time'] = average_reduce(batch_time)
-        batch_info['data_time'] = average_reduce(data_time)
-
-        for k, v in sorted(outputs.items()):
-            # pass
-            batch_info[k] = average_reduce(v.data.item())
-        average_meter.update(**batch_info)
-
-        # if rank == 0:
-        #     for k, v in batch_info.items():
-        #         tb_writer.add_scalar(k, v, tb_idx)
-        #     if (idx + 1) % cfg.TRAIN.PRINT_FREQ == 0:
-        #         info = "Epoch: [{}][{}/{}] lr: {:.6f}\n".format(
-        #             epoch + 1, (idx + 1) % num_per_epoch,
-        #             num_per_epoch, lr_scheduler.get_lr()[1])
-        #         for cc, (k, v) in enumerate(batch_info.items()):
-        #             if cc % 2 == 0:
-        #                 info += ("\t{:s}\t").format(
-        #                     getattr(average_meter, k))
-        #             else:
-        #                 info += ("{:s}\n").format(
-        #                     getattr(average_meter, k))
-        #         logger.info(info)
-        #         print_speed(idx + 1 + start_epoch * num_per_epoch,
-        #                     average_meter.batch_time.avg,
-        #                     cfg.TRAIN.EPOCH * num_per_epoch)
-        #         if cfg.TRAIN.LOG_GRADS:
-        #             log_grads(model.module, tb_writer, tb_idx)
-        end = time.time()
-
-def train(train_dataset, model, optimizer, lr_scheduler):
+def train_ms(train_dataset, model, optimizer, lr_scheduler):
     average_meter = AverageMeter()
 
     def is_valid_number(x):
@@ -351,10 +202,10 @@ def train(train_dataset, model, optimizer, lr_scheduler):
 
     idx = 0
     for data in train_dataset.create_dict_iterator():
-        with open('/data/HDN_var/trainDictData.json') as fp:
-            data = json.load(fp)
-        for key in data:
-            data[key] = Tensor(data[key])
+        # with open('/data/HDN_var/trainDictData.json') as fp:
+        #     data = json.load(fp)
+        # for key in data:
+        #     data[key] = Tensor(data[key])
 
         if epoch != idx // num_per_epoch + start_epoch:  # 更新epoch
             epoch = idx // num_per_epoch + start_epoch
@@ -372,53 +223,38 @@ def train(train_dataset, model, optimizer, lr_scheduler):
                 logger.info('start training backbone.')
                 optimizer, lr_scheduler = build_opt_lr(model.module, epoch)
                 logger.info("model\n{}".format(describe(model.module)))
-            lr_scheduler(epoch)
+            # lr_scheduler(epoch)
             logger.info('epoch: {}'.format(epoch + 1))
-        # tb_idx = idx + start_epoch * num_per_epoch
+
         # if idx % num_per_epoch == 0 and idx != 0:
         #     for idx, pg in enumerate(optimizer.param_groups):
         #         logger.info('epoch {} lr {}'.format(epoch + 1, pg['lr']))
-        #         if rank == 0:
-        #             tb_writer.add_scalar('lr/group{}'.format(idx + 1),
-        #                                  pg['lr'], tb_idx)
-        #
-        # data_time = average_reduce(time.time() - end)
-        # if rank == 0:
-        #     tb_writer.add_scalar('time/data', data_time, tb_idx)
-
-        # with torch.autograd.detect_anomaly():
-
+        
+       
+        data_time = average_reduce(time.time() - end)
         outputs = model(data)
 
         loss = outputs['total_loss']
-        if is_valid_number(loss.data.item()):
-            loss.backward()
-            reduce_gradients(model)
-            clip_grad_norm_(model.parameters(), cfg.TRAIN.GRAD_CLIP)
-            optimizer.step()
+        # if is_valid_number(loss):
+            # loss.backward()
+            # reduce_gradients(model)
+            # clip_grad_norm_(model.parameters(), cfg.TRAIN.GRAD_CLIP)
+            # optimizer.step()
         batch_time = time.time() - end
         batch_info = {}
-        # batch_info['batch_time'] = average_reduce(batch_time)
-        # batch_info['data_time'] = average_reduce(data_time)
+        batch_info['batch_time'] = average_reduce(batch_time)
+        batch_info['data_time'] = average_reduce(data_time)
 
-        # for k, v in sorted(outputs.items()):
-        #     # pass
-        #     batch_info[k] = average_reduce(v.data.item())
+        for k, v in sorted(outputs.items()):
+            batch_info[k] = average_reduce(v.data.item())
         average_meter.update(**batch_info)
 
         end = time.time()
         idx = idx + 1
 
 
-
-
 def main():
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,3"
-
-    # 多卡分布式训练，暂时不管
-    # rank, world_size = dist_init()
-    # print('rank', rank, 'world_size', world_size)
-    # logger.info("init done")
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     # load cfg
     cfg.merge_from_file(args.cfg)
@@ -426,9 +262,7 @@ def main():
         os.makedirs(cfg.TRAIN.LOG_DIR)
     init_log('global', logging.INFO)
     if cfg.TRAIN.LOG_DIR:
-        add_file_handler('global',
-                         os.path.join(cfg.TRAIN.LOG_DIR, 'logs.txt'),
-                         logging.INFO)
+        add_file_handler('global',os.path.join(cfg.TRAIN.LOG_DIR, 'logs.txt'),logging.INFO)
 
     logger.info("Version Information: \n{}\n".format(commit()))
     logger.info("config \n{}".format(json.dumps(cfg, indent=4)))
@@ -443,19 +277,14 @@ def main():
         print('pretrained path', backbone_path)
         load_pretrain(model.backbone, backbone_path)
 
-    # create tensorboard writer
-    # if rank == 0 and cfg.TRAIN.LOG_DIR:
-    #     tb_writer = SummaryWriter(cfg.TRAIN.LOG_DIR)
-    # else:
-    #     tb_writer = None
-
     # build dataset loader
     train_dataset = build_data_loader()
-    # start_epoch = cfg.TRAIN.START_EPOCH
-    # print('start_epoch',start_epoch)
-    # #build optimizer and lr_scheduler
-    optimizer, lr_scheduler = build_opt_lr(model,
-                                           cfg.TRAIN.START_EPOCH)
+
+    start_epoch = cfg.TRAIN.START_EPOCH
+    print('start_epoch',start_epoch)
+
+    #build optimizer and lr_scheduler
+    optimizer, lr_scheduler = build_opt_lr(model, cfg.TRAIN.START_EPOCH)
     # resume training
     RESUME_PATH = cfg.BASE.PROJ_PATH + cfg.TRAIN.RESUME
     if cfg.TRAIN.RESUME:
@@ -468,24 +297,41 @@ def main():
     elif cfg.TRAIN.PRETRAINED:
         print('if cfg.TRAIN.PRETRAINED')
         load_pretrain(model, cfg.TRAIN.PRETRAINED)
-    #
-    #
-    # dist_model = DistModule(model)
-    # logger.info(lr_scheduler)
-    # logger.info("model prepare done")
-    # cfg.TRAIN.START_EPOCH = start_epoch
-    #
+
+    logger.info(lr_scheduler)
+    logger.info("model prepare done")
+    cfg.TRAIN.START_EPOCH = start_epoch
+
     # start training
-    net = nn.TrainOneStepCell(model, optimizer)
-    net.set_train()
-    # model.train(epoch=5, train_dataset=train_dataset)
-    train(train_dataset, model, optimizer, lr_scheduler)
+    train_net = nn.TrainOneStepCell(model, optimizer)
+    # train_net.set_train(False)
+    average_meter = AverageMeter()
+
+    step = 0
+    end = time.time()
+    for epoch in range(cfg.TRAIN.EPOCH):
+        for data in train_dataset.create_dict_iterator():
+            with open('/data/HDN_var/trainDictData.json') as fp:
+                data = json.load(fp)
+            for key in data:
+                data[key] = Tensor(data[key])
+            loss = train_net(data)
+            batch_time = time.time() - end
+            batch_info = {}
+            batch_info['batch_time'] = average_reduce(batch_time)
+            # batch_info['data_time'] = average_reduce(data_time)
+
+            # for k, v in sorted(outputs.items()):
+            #     batch_info[k] = average_reduce(v.data.item())
+            average_meter.update(**batch_info)
+
+            end = time.time()
+            print(loss)
+            step = step + 1
+    # train_ms(train_dataset, model, optimizer, lr_scheduler)
 
 
 if __name__ == '__main__':
     seed(args.seed)
-    # import heartrate
-    # from heartrate import trace, files
-    # heartrate.trace(browser=True,host='10.214.241.12', port=4235, files=files.path_contains('model_builder_e2e_unconstrained', 'train_e2e_unconstrained_dist','unconstrained_dataset'))
-    context.set_context(mode=context.PYNATIVE_MODE, device_target='GPU')
+    context.set_context(mode=context.PYNATIVE_MODE, device_target='GPU', max_device_memory='3.5GB')
     main()

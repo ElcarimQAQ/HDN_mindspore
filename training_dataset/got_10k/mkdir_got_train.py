@@ -32,7 +32,10 @@ if __name__ == "__main__":
     for sub_set in sub_sets:
         sub_set_base_path = join(got10k_base_path, sub_set)
         for video_set in sorted(listdir(sub_set_base_path)):
-            v_idx = int(video_set[-6:])
+            try :
+                v_idx = int(video_set[-6:])
+            except:
+                continue
             if  v_idx > end_v or v_idx < start_v:
                 continue
             video = join(sub_set_base_path, video_set)

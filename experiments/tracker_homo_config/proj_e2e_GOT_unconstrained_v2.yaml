@@ -13,9 +13,9 @@ BACKBONE:
   TYPE: "resnet50"
   KWARGS:
     used_layers: [2, 3, 4]
-  PRETRAINED: 'pretrained_models/backbone_resnet50.ckpt'
+  PRETRAINED:  'pretrained_models/backbone_resnet50.ckpt'
   TRAIN_LAYERS: ['layer2', 'layer3', 'layer4']
-  TRAIN_EPOCH: 40
+  TRAIN_EPOCH: 0 #40
   LAYERS_LR: 0.1
   IF_PRETRAINED: False #True
 
@@ -67,7 +67,7 @@ TRAIN:
   WEIGHTED_MAP_LP: False
   EPOCH: 30 #30 best
   START_EPOCH: 0 # 0 or resume checkpoint
-  BATCH_SIZE: 32 #1
+  BATCH_SIZE: 1 #32
   HOMO_START_LR: 0.0002
   BASE_LR: 0.0002 #0.0003 0.00005 0.0002
   OUTPUT_SIZE_LP: 13
@@ -94,6 +94,7 @@ TRAIN:
       step: 1
   SAVE_LOGS: False
   LOG_GRADS: False
+  PRETRAINED:  '/home/lbyang/workspace/HDN_mindspore/pretrained_models/hdn.ckpt'
 
 DATASET:
   #  POT_E2E:

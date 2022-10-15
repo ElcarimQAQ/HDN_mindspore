@@ -1,6 +1,6 @@
 import mindspore as ms
 from mindspore import nn, ops
-from mindspore.common.initializer import initializer, HeNormal
+from mindspore.common.initializer import  HeNormal
 
 class PreShareFeature(nn.Cell):
     def __init__(self, ):

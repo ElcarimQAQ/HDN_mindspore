@@ -1,8 +1,6 @@
 import math
 
 import mindspore.nn as nn
-import torch.utils.model_zoo as model_zoo
-import torch, imageio
 import mindspore as ms
 from mindspore import ops, Tensor, context
 from mindspore.common.initializer import Normal, initializer,One
@@ -13,53 +11,6 @@ import matplotlib.pyplot as plt
 """
 homo-estimator's backbone, reconstruction of the original Deephomography 
 """
-
-criterion_l2 = nn.MSELoss()
-# triplet_loss = nn.TripletMarginLoss(margin=1.0, p=1, reduce=False, size_average=False)
-
-__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
-           'resnet152']
-
-model_urls = {
-    'resnet18': "mindspore/1.8/resnet18_imagenet2012",
-    'resnet34': "mindspore/1.8/resnet34_imagenet2012",
-    'resnet50': "mindspore/1.8/resnet50_imagenet2012",
-    'resnet101': "mindspore/1.8/resnet101_imagenet2012",
-    'resnet152': "mindspore/1.8/resnet152_imagenet2012",
-}
-
-
-def create_gif(image_list, gif_name, duration=0.35):
-    frames = []
-    for image_name in image_list:
-        frames.append(image_name)
-    imageio.mimsave(gif_name, frames, 'GIF', duration=0.5)
-    return
-
-
-def getPatchFromFullimg(patch_size_h, patch_size_w, patchIndices, batch_indices_tensor, img_full):
-    num_batch, num_channels, height, width = img_full.size()
-    warped_images_flat = img_full.reshape(-1)
-    patch_indices_flat = patchIndices.reshape(-1)
-    pixel_indices = patch_indices_flat.long() + batch_indices_tensor
-    mask_patch = ops.gather_elements(warped_images_flat, 0, pixel_indices)
-    mask_patch = mask_patch.reshape([num_batch, 1, patch_size_h, patch_size_w])
-
-    return mask_patch
-
-
-def normMask(mask, strenth=0.5):
-    """
-    :return: to attention more region
-
-    """
-    batch_size, c_m, c_h, c_w = mask.size()
-    max_value = mask.reshape(batch_size, -1).max(1)[0]
-    max_value = max_value.reshape(batch_size, 1, 1, 1)
-    mask = mask / (max_value * strenth)
-    mask = ops.clip_by_value(mask, 0, 1)
-
-    return mask
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -157,15 +108,13 @@ class ResNet(nn.Cell):
         # self.avgpool = nn.AvgPool2d(7, stride=1)
         print('block.expansion', block.expansion)
         # self.fc = nn.Linear(512 * block.expansion, num_classes)
-        for m in self.cells():
-            # if isinstance(m, nn.Conv2d):
-            #     n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-            #     m.weight = initializer(Normal(0, math.sqrt(2. / n)), m.shape, ms.float32)
-            if isinstance(m, nn.BatchNorm2d):
-                fill = ops.Fill()
-                m.weight = fill(ms.float32, (64,), 1)
-                zeroslike = ops.ZerosLike()
-                m.bias = zeroslike(Tensor(shape=(64,), dtype=ms.float32, init=One()))
+        for _, m in self.cells_and_names():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.set_data(initializer(Normal(0, math.sqrt(2. / n)), m.weight.shape))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.gamma.set_data(initializer('ones', m.gamma.shape))
+                m.beta.set_data(initializer('zeros', m.beta.shape))
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
@@ -211,8 +160,6 @@ def resnet18(pretrained=False, **kwargs):
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
     model = ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
     return model
 
 
@@ -223,8 +170,6 @@ def resnet34(pretrained=False, **kwargs):
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
     model = ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet34']))
     return model
 
 
@@ -235,8 +180,6 @@ def resnet50(pretrained=False, **kwargs):
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
     return model
 
 
@@ -247,8 +190,6 @@ def resnet101(pretrained=False, **kwargs):
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
     model = ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet101']))
     return model
 
 
@@ -259,8 +200,6 @@ def resnet152(pretrained=False, **kwargs):
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
     model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet152']))
     return model
 
 if __name__ == '__main__':

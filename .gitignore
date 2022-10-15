@@ -2,3 +2,4 @@ pretrained_models
 model
 testing_dataset
 hdn/utils
+hdn_neck.ckpt

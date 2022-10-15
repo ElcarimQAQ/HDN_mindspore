@@ -311,10 +311,10 @@ def main():
     end = time.time()
     for epoch in range(cfg.TRAIN.EPOCH):
         for data in train_dataset.create_dict_iterator():
-            with open('/data/HDN_var/trainDictData.json') as fp:
-                data = json.load(fp)
-            for key in data:
-                data[key] = Tensor(data[key])
+            # with open('/data/HDN_var/trainDictData.json') as fp:
+            #     data = json.load(fp)
+            # for key in data:
+            #     data[key] = Tensor(data[key])
             loss = train_net(data)
             batch_time = time.time() - end
             batch_info = {}

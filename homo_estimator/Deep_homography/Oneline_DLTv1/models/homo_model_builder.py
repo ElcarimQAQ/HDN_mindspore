@@ -13,7 +13,8 @@ import mindspore as ms
 from homo_estimator.Deep_homography.Oneline_DLTv1.utils import transform, DLT_solve
 import matplotlib.pyplot as plt
 from mindspore.scipy.linalg import inv
-from hdn.models.triplet_loss import TripletMarginLoss
+from hdn.models.triplet_loss import TripletMarginLoss as myTripletMarginLoss
+from mindspore.nn.loss.loss import TripletMarginLoss
 
 """
 The model_builder we use right now.
@@ -21,66 +22,8 @@ The model_builder we use right now.
 
 criterion_l2 = nn.MSELoss()
 # triplet_loss = nn.TripletMarginLoss(margin=1.0, p=1, reduce=False, size_average=False)#anchor p, n
-triplet_loss = TripletMarginLoss(margin=1.0, p=1)
-
-'''
-   try to use huber loss to enhance the robustness
-    >>> # Custom Distance Function
-    >>> def l_infinity(x1, x2):
-    >>>     return torch.max(torch.abs(x1 - x2), dim=1).values
-    >>>
-    >>> triplet_loss = \
-    >>>     nn.TripletMarginWithDistanceLoss(distance_function=l_infinity, margin=1.5)
-    >>> output = triplet_loss(anchor, positive, negative)
-    >>> output.backward()
-'''
-def triplet_loss_xr(anchor, positive, negative, p_mask, n_mask, mask_ap, margin=0.5):#a, p, n, p_mask, n_mask
-    """
-
-    :param anchor:
-    :param positive:
-    :param negative:
-    :param a_mask: anchor weight window
-    :param p_mask: positive weight window
-    :param n_mask: negative weight window
-    :param mask_ap: mask from the mask-generator
-    :return: loss (scalar)
-    """
-    loss_neg = smooth_l1_loss(anchor, negative, p_mask, mask_ap)
-    loss_pos = smooth_l1_loss(anchor, positive, n_mask, mask_ap)
-    loss = loss_pos - loss_neg + margin
-    return loss
-
-def smooth_l1_loss(output, target, o_mask, mask_ap):
-    absolute_loss = torch.abs(target - output) * o_mask * mask_ap
-    square_loss = 0.5 * (target - output) ** 2 * o_mask * mask_ap
-    inds = absolute_loss.lt(1).float()
-    reg_loss = (inds * square_loss + (1 - inds) * (absolute_loss - 0.5))
-    tot = (mask_ap).sum()
-    loss = reg_loss.sum() / tot
-    return loss
-
-
-
-
-
-def create_gif(image_list, gif_name, duration=0.35):
-    frames = []
-    for image_name in image_list:
-        frames.append(image_name)
-    imageio.mimsave(gif_name, frames, 'GIF', duration=0.5)
-    return
-
-
-def getPatchFromFullimg(patch_size_h, patch_size_w, patchIndices, batch_indices_tensor, img_full):
-    num_batch, num_channels, height, width = img_full.shape
-    warped_images_flat = img_full.reshape(-1)
-    patch_indices_flat = patchIndices.reshape(-1)
-    pixel_indices = patch_indices_flat.long() + batch_indices_tensor
-    mask_patch = ops.gather_elements(warped_images_flat, 0, pixel_indices)
-    mask_patch = mask_patch.reshape([num_batch, 1, patch_size_h, patch_size_w])
-
-    return mask_patch
+myTriplet_loss = myTripletMarginLoss(margin=1.0, p=1)
+triplet_loss = TripletMarginLoss(p=1)
 
 
 def normMask(mask, strenth=0.5):
@@ -199,9 +142,10 @@ class HomoModelBuilder(nn.Cell):
             tmp_replace = patch_1_m
             sear_replace = patch_2_m
             pred_replace = pred_I2_CnnFeature_m
-        feature_loss_mat = triplet_loss(sear_replace, pred_replace, tmp_replace)
-
-        feature_loss = ops.ReduceSum()(feature_loss_mat) / pos_ids.shape[0] /(127*127)
+        margin = ms.Tensor(1.0)
+        # feature_loss_mat = triplet_loss(sear_replace, pred_replace, tmp_replace, margin)
+        feature_loss_mat = myTriplet_loss(sear_replace, pred_replace, tmp_replace)
+        feature_loss = feature_loss_mat.sum() / pos_ids.shape[0] /(127*127)
         feature_loss = ops.expand_dims(feature_loss, 0)
         #neg loss
         # cur_device = feature_loss.device

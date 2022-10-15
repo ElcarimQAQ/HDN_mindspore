@@ -6,35 +6,18 @@ from mindspore import nn
 import homo_estimator.Deep_homography.Oneline_DLTv1.backbone.resnet as resnet
 import  mindspore_hub as mshub
 import mindspore as ms
-# from test_ideas.net.unet import  UNet_fuse
-
 
 
 model_urls = {
-    'resnet18': "mindspore/1.8/resnet18_imagenet2012",
     'resnet34': "/home/lbyang/workspace/HDN_mindspore/pretrained_models/resnet34.ckpt", # "mindspore/1.8/resnet34_imagenet2012"
-    'resnet50': "mindspore/1.8/resnet50_imagenet2012",
-    'resnet101': "mindspore/1.8/resnet101_imagenet2012",
-    'resnet152': "mindspore/1.8/resnet152_imagenet2012",
 }
 
 def get_backbone(model_name, pretrained=False, **kwargs):
     print('**kwargs',kwargs)
     if model_name == 'resnet34':
         model = resnet.resnet34(pretrained=False, **kwargs)
-    elif model_name == 'resnet50':
-        model = resnet.resnet50(pretrained=False, **kwargs)
-    elif model_name == 'resnet101':
-        model = resnet.resnet101(pretrained=False, **kwargs)
-    elif model_name == 'resnet152':
-        model = resnet.resnet152(pretrained=False, **kwargs)
+        model.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, pad_mode='pad')
 
-    if model_name == 'resnet18':
-        model.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, pad_mode='pad')
-    elif model_name == 'resnet34':
-        model.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, pad_mode='pad')
-    else:
-        model.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, pad_mode='pad')
     if pretrained == True:
         print('load_pretrained from',model_urls[model_name])
         exclude_dict = ['conv1.weight','fc.weight','fc.bias']
@@ -49,7 +32,3 @@ def get_backbone(model_name, pretrained=False, **kwargs):
 
     return model
 
-# def get_backbone_unet(name, **kwargs):
-#     if name == 'Unet_fuse':
-#         return UNet_fuse(**kwargs)
-#     return UNet_fuse(**kwargs)

@@ -11,17 +11,19 @@ def DLT_solve(src_p, off_set):
     # src_p: shape=(bs, n, 4, 2)
     # off_set: shape=(bs, n, 4, 2)
     # can be used to compute mesh points (multi-H)
-    bs, _ = src_p.shape
+    bs = src_p.shape[0]
     divide = int(np.sqrt(len(src_p[0])/2)-1)
     row_num = (divide+1)*2
 
     for i in range(divide):
         for j in range(divide):
-
-            h4p = src_p[:,[2*j+row_num*i, 2*j+row_num*i+1, 
+            try:
+                h4p = src_p[:,[2*j+row_num*i, 2*j+row_num*i+1,
                     2*(j+1)+row_num*i, 2*(j+1)+row_num*i+1, 
                     2*(j+1)+row_num*i+row_num, 2*(j+1)+row_num*i+row_num+1,
-                    2*j+row_num*i+row_num, 2*j+row_num*i+row_num+1]].reshape(bs, 1, 4, 2)  
+                    2*j+row_num*i+row_num, 2*j+row_num*i+row_num+1]].reshape(bs, 1, 4, 2)
+            except:
+                print("h4p reshape error")
             
             pred_h4p = off_set[:,[2*j+row_num*i, 2*j+row_num*i+1, 
                     2*(j+1)+row_num*i, 2*(j+1)+row_num*i+1, 
@@ -263,104 +265,5 @@ def transform(patch_size_h,patch_size_w,M_tile_inv,H_mat,M_tile,I1,patch_indices
     return ops.transpose(pred_I2, (0,3,1,2))
 
 
-def display_using_tensorboard(I, I2_ori_img, I2, pred_I2, I2_dataMat_CnnFeature, pred_I2_dataMat_CnnFeature, triMask, loss_map, writer):
 
-    I1_ori_img = cv2.normalize(I.cpu().detach().numpy()[0, 0, ...], None, 0, 255, cv2.NORM_MINMAX,
-                               cv2.CV_8U)
-    I2_ori_img_ = cv2.normalize(I2_ori_img.cpu().detach().numpy()[0, 0, ...], None, 0, 255, cv2.NORM_MINMAX,
-                                cv2.CV_8U)
-    input_I2 = cv2.normalize(I2.cpu().detach().numpy()[0, 0, ...], None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-    pred_I2 = cv2.normalize(pred_I2.cpu().detach().numpy()[0, 0, ...], None, 0, 255, cv2.NORM_MINMAX,
-                            cv2.CV_8U)
-
-    I2_channel_1 = cv2.normalize(I2_dataMat_CnnFeature.cpu().detach().numpy()[0, 0, ...], None, 0, 255,
-                                 cv2.NORM_MINMAX, cv2.CV_8U)
-    pred_I2_channel_1 = cv2.normalize(pred_I2_dataMat_CnnFeature.cpu().detach().numpy()[0, 0, ...], None, 0,
-                                      255, cv2.NORM_MINMAX, cv2.CV_8U)
-
-    mask_1 = cv2.normalize(triMask.cpu().detach().numpy()[0, ...], None, 0, 255, cv2.NORM_MINMAX,
-                           cv2.CV_8U)
-    loss_fig = cv2.normalize(loss_map.cpu().detach().numpy()[0, ...], None, 0, 255, cv2.NORM_MINMAX,
-                             cv2.CV_8U)
-
-    writer.add_image('I1 and I2',
-                     I1_ori_img,
-                     global_step=1,
-                     dataformats='HW')
-    writer.add_image('I1 and I2',
-                     I2_ori_img_,
-                     global_step=2,
-                     dataformats='HW')
-
-    writer.add_image('I2 and pred_I2',
-                     input_I2,
-                     global_step=1,
-                     dataformats='HW')
-    writer.add_image('I2 and pred_I2',
-                     pred_I2,
-                     global_step=2,
-                     dataformats='HW')
-
-    writer.add_image('I2 and pred I2 feature_1',
-                     I2_channel_1,
-                     global_step=1,
-                     dataformats='HW')
-    writer.add_image('I2 and pred I2 feature_1',
-                     pred_I2_channel_1,
-                     global_step=2,
-                     dataformats='HW')
-
-    writer.add_image('loss_map and mask',
-                     loss_fig,
-                     global_step=1,
-                     dataformats='HW')
-    writer.add_image('loss_map and mask',
-                     mask_1,
-                     global_step=2,
-                     dataformats='HW')
-
-
-def get_gpu_memory_map():
-    """Get the current gpu usage.
-    Returns
-    -------
-    usage: dict
-        Keys are device ids as integers.
-        Values are memory usage as integers in MB.
-    """
-
-    result = subprocess.check_output(
-        [
-            'nvidia-smi', '--query-gpu=memory.used',
-            '--format=csv,nounits,noheader'
-        ], encoding='utf-8')
-    # Convert lines into a dictionary
-    gpu_memory = [int(x) for x in result.strip().split('\n')]
-
-    gpu_memory_map = dict(zip(range(len(gpu_memory)), gpu_memory))
-
-    return gpu_memory_map
-
-
-def get_memory_map():
-
-    mem = psutil.virtual_memory()
-    # total mem
-    total = float(mem.total) / 1024 / 1024 / 1024
-    # used mem
-    used = float(mem.used) / 1024 / 1024 / 1024
-
-    # free mem
-    free = float(mem.free) / 1024 / 1024 / 1024
-
-    #page cache
-    page_cache = float(mem.cached) / 1024 / 1024 / 1024
-
-    #buffer cache
-    buffer_cache = float(mem.buffers) / 1024 / 1024 / 1024
-    return {'total': total,
-            'used':used,
-            'free':free,
-            'page_cache':page_cache,
-            'buffer_cache':buffer_cache}
 

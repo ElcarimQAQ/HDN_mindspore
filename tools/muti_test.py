@@ -1,4 +1,4 @@
-import  os
+import os
 
 if __name__ == '__main__':
     cmd =  'export PYTHONPATH="/home/lbyang/workspace/HDN_mindspore:/home/lbyang/workspace/HDN_mindspore/homo_estimator/Deep_homography/Oneline_DLTv2:"'
